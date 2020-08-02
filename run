@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -e
+(cd target && cabal run)
+cabal run stacker -- $1 target/stacker-fake-pkg.prof target/hie/

@@ -1,0 +1,2 @@
+Configure as "cabal configure -ftest" and run "SegmentTreeTests" for
+functional test suite.
