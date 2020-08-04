@@ -130,7 +130,7 @@ arg_idents :: HieAST a -> (IdentMap a, [HieAST a])
 arg_idents = first generateShallowReferencesMap . shallower (has_node_constr ["GRHS"])
 
 mk_pt_store :: DynFlags -> HieAST TypeIndex -> PtStore TypeIndex
-mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree $ STree.fromList $ map seg2interval s)) . snd . mk_pt_store' False where
+mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree $ STree.fromList $ map seg2intervalish s)) . snd . mk_pt_store' False where
   mk_pt_store' :: Bool -> HieAST TypeIndex -> ([Identifier], PtStore TypeIndex)
   mk_pt_store' _ ast | has_node_constr fNS ast =
     let (idents, grhss) = arg_idents ast

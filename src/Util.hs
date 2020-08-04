@@ -23,16 +23,28 @@ toNonEmpty _ (a:r) = a :| r
 toNonEmpty a _ = a :| []
 
 span2interval :: RealSrcSpan -> STInterval.Interval (Locd a)
-span2interval sp =
-  let (l, h) = seg2interval (sp, undefined)
-  in STInterval.Interval STInterval.Open (STInterval.R l) (STInterval.R h) STInterval.Open
+span2interval sp = seg2interval (sp, undefined)
 
-seg2interval :: Seg a -> (Locd a, Locd a)
-seg2interval (sp, v) = ((Locd (realSrcSpanStart sp) v), (Locd (realSrcSpanEnd sp) v))
+seg2interval :: Seg a -> STInterval.Interval (Locd a)
+seg2interval seg = 
+  let (l, h) = seg2intervalish seg
+  in STInterval.Interval STInterval.Open (STInterval.R l) (STInterval.R h) STInterval.Open
+  
+seg2intervalish :: Seg a -> (Locd a, Locd a)
+seg2intervalish (sp, v) = ((Locd (realSrcSpanStart sp) v), (Locd (realSrcSpanEnd sp) v))
+
+map_loc_ivl f = catMaybes . map ((fmap f) . (\case { STInterval.R v -> Just v; otherwise -> Nothing }) . STInterval.low)
+ivl_payloads = map_loc_ivl l_payload
+ivl_locs = map_loc_ivl l_loc
 
 segfind :: Segs a -> Span -> [a]
 segfind (SegFlat l) sp = map snd $ filter ((`containsSpan` sp) . fst) l
-segfind (SegTree t) sp = catMaybes $ map ((fmap l_payload) . (\case { STInterval.R v -> Just v; otherwise -> Nothing }) . STInterval.low) $ STree.intervalQuery t (span2interval sp)
+segfind (SegTree t) sp = ivl_payloads $ STree.subintervalQuery t (span2interval sp)
+
+ident_span :: Identifier -> Maybe Span
+ident_span (Right n) | RealSrcSpan sp <- nameSrcSpan n = Just sp
+                     | otherwise = Nothing
+ident_span _ = Nothing
 
 gr_prettify :: (Gr.DynGraph gr, Show a, Show b) => (c -> a) -> (d -> b) -> gr c d -> String
 gr_prettify sa sb g = foldr (showsContext . Gr.context g) id (Gr.nodes g) ""
