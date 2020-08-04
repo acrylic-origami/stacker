@@ -114,9 +114,12 @@ cs_span (Prof.CostCentre {..}) = txt2span =<< costCentreSrc
     txt2span_single = fmap (fsLit *** mapMaybe readMaybe) . ((uncons . snd) =<<) . uncons . map T.unpack . getAllTextSubmatches . (=~ ("^(.*):([0-9]+):([0-9]+)\\-([0-9]+)$" :: T.Text)) -- . uncurry (trace . show) . dupe
 
 fNS :: [FastString]
-fNS = ["HsLam", "AbsBinds"] -- I really hope the trees look the same for these two always every time: single level of first arg as 
+fNS = ["Match"] -- I really hope the trees look the same for these two always every time: single level of first arg as 
 aPPS :: [FastString]
 aPPS = ["HsApp", "OpApp"]
+
+has_node_type :: [FastString] -> HieAST a -> Bool
+has_node_type constrs ast = or [ any ((ident==) . snd) $ S.toList $ nodeAnnotations $ nodeInfo ast | ident <- constrs ]
 
 has_node_constr :: [FastString] -> HieAST a -> Bool
 has_node_constr constrs ast = or $ catMaybes [ (fmap ((==ident) . fst) $ S.lookupGT (ident, "") $ nodeAnnotations $ nodeInfo ast) | ident <- constrs ]
@@ -135,16 +138,17 @@ mk_pt_store :: DynFlags -> HieAST TypeIndex -> PtStore TypeIndex
 mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree $ STree.fromList $ map seg2intervalish s)) . snd . mk_pt_store' False where
   mk_pt_store' :: Bool -> HieAST TypeIndex -> ([Identifier], PtStore TypeIndex)
   mk_pt_store' _ ast | has_node_constr fNS ast =
-    let (idents, grhss) = arg_idents ast
+    let (fn_args, grhss) = first (M.keys) $ mconcat $ map arg_idents $ drop 1 $ nodeChildren ast
         is_matchbind = any (\case { MatchBind -> True; _ -> False }) . S.toList . identInfo
-        (fn_names, fn_args) = both (map fst) $ partition (any is_matchbind . map snd . snd) (M.toList idents)
-        (_, next_store) = mconcat $ map (mk_pt_store' False) grhss
-        fn_key = if has_node_constr ["HsLam"] ast then FnLam (nodeSpan ast) else FnNamed (head fn_names)
-    in (
+        fn_names = (M.keys $ generateReferencesMap $ [head $ nodeChildren ast])
+        (next_names, next_store) = mconcat $ map (mk_pt_store' False) grhss
+        fn_key = if has_node_constr ["HsLam"] ast then FnLam (nodeSpan ast) else FnNamed (nodeSpan ast) (head (if null fn_names then error (ppr_ast dflags ast) else fn_names))
+    in flip const (ast, dflags, (grhss), is_matchbind, (fn_names, fn_args), next_store, fn_key)
+      $ (
           [] -- clear accumulated names
           , next_store
           & ps_fns %~ (
-              flip (foldr (flip (M.insertWithKey (error "Name is arg'd to two functions")) fn_key)) fn_args -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
+              flip (foldr (flip (M.insertWith (const . trace "Name is arg'd to two functions")) fn_key)) (S.toList $ S.fromList $ fn_args <> next_names) -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
             )
           -- & ps_binds %~ (M.unionsWith (<>) . (:(map (fuzzy_patbinds) grhss))) -- search entire function body for patterns ONLY HERE, at the top of a function
         )
