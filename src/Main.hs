@@ -150,6 +150,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
           & ps_fns %~ (
               flip (foldr (flip (M.insertWith (const . trace "Name is arg'd to two functions")) fn_key)) (S.toList $ S.fromList $ fn_args <> next_names) -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
             )
+          & (ps_app_groups . ag_ident_map) %~ (flip (foldr (\(fn, n) m -> fromMaybe id (M.insert fn <$> (m M.!? n)) m)) (liftA2 (,) fn_names next_names))
           -- & ps_binds %~ (M.unionsWith (<>) . (:(map (fuzzy_patbinds) grhss))) -- search entire function body for patterns ONLY HERE, at the top of a function
         )
   mk_pt_store' within_app ast =
