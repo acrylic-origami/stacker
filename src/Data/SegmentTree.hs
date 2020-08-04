@@ -24,7 +24,7 @@
 -- referring to the number of intervals.
 -----------------------------------------------------------------------------
 
-module Data.SegmentTree ( R(..), Interval(..), Boundary(..), STree(..), fromList, insert, queryTree, countingQuery, stabbingQuery, intervalQuery ) where
+module Data.SegmentTree ( R(..), Interval(..), Boundary(..), STree(..), fromList, insert, queryTree, countingQuery, stabbingQuery, intervalQuery, subintervalQuery, superintervalQuery ) where
 
 import Data.SegmentTree.Interval
 import Data.SegmentTree.Measured
@@ -147,16 +147,22 @@ queryTree t point = go t (R point)
         qleft  = if point `inside` (interval left)  then go left  point else mempty
         qright = if point `inside` (interval right) then go right point else mempty
 
-intervalQuery :: (Monoid t, Ord a) => STree t a -> Interval a -> t
-intervalQuery t i | ivl <- interval t
-                  , i `subinterval` ivl
-                  = case t of
-                    Leaf u _ -> u
-                    Branch u _ l r -> u <> intervalQuery l i <> intervalQuery r i
-                  | otherwise = mempty
+intervalQuery :: (Monoid t, Ord a) => (Interval a -> Interval a -> Bool) -> STree t a -> Interval a -> t
+intervalQuery f t i =
+  let ivl = interval t
+      filt = if i `f` ivl then id else const mempty
+  in case t of
+    Leaf u _ -> filt u
+    Branch u _ l r -> filt u <> intervalQuery f l i <> intervalQuery f r i 
+
+subintervalQuery :: (Monoid t, Ord a) => STree t a -> Interval a -> t
+subintervalQuery = intervalQuery subinterval
+
+superintervalQuery :: (Monoid t, Ord a) => STree t a -> Interval a -> t
+superintervalQuery = intervalQuery (flip subinterval)
 
 -- | Convenience wrapper around `queryTree'. Returns count of intervals covering the `point'
-countingQuery :: (Measured (Interval a) (Sum b), Ord a) => STree (Sum b) a -> a -> b
+countingQuery :: (Ord a, Num a, Num b) => STree (Sum b) a -> a -> b
 countingQuery tree point = getSum (queryTree tree point)
 
 -- | Convenience wrapper around `queryTree' to perform stabbing query. Returns list of intevals coverting the point
