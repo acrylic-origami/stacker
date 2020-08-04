@@ -9,6 +9,7 @@ import qualified Data.SegmentTree as STree
 import qualified Data.SegmentTree.Interval as STInterval
 
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import Data.List.NonEmpty ( NonEmpty(..) )
 import Data.List ( intersect )
 import Data.Maybe ( catMaybes )
@@ -26,6 +27,9 @@ import Debug.Trace ( trace, traceShow )
 both f = (f *** f)
 swap (a, b) = (b, a)
 dupe a = (a, a)
+
+unique :: (Eq a, Ord a) => [a] -> [a]
+unique = S.toList . S.fromList
 
 toNonEmpty _ (a:r) = a :| r
 toNonEmpty a _ = a :| []
@@ -73,10 +77,9 @@ ppr_ d = putStrLn . ppr_safe d
 ppr_nk :: DynFlags -> NodeKey a -> String 
 ppr_nk dflags = O.showSDoc dflags . ppr_nk' where
   ppr_nk' (NKApp ag) = O.text "App @" O.<> (ppr $ s_span ag)
-  ppr_nk' (NKBind (BindGroup bsp _)) = O.text "Bind @" O.<> ppr bsp
-  ppr_nk' (NKFn (FnLam sp)) = O.text "Lam @" O.<> ppr sp
-  ppr_nk' (NKFn (FnNamed sp (Right n))) = O.text "FnNamed " O.<> O.quotes (ppr n) O.<> O.text "@" O.<> ppr sp
-  ppr_nk' (NKFn (FnNamed sp (Left m))) = O.text "Module " O.<> O.quotes (ppr m) O.<> O.text "@" O.<> ppr sp
+  ppr_nk' (NKBind (BindLam sp)) = O.text "Lam @" O.<> ppr sp
+  ppr_nk' (NKBind (BindNamed sp (Right n))) = O.text "BindNamed " O.<> O.quotes (ppr n) O.<> O.text "@" O.<> ppr sp
+  ppr_nk' (NKBind (BindNamed sp (Left m))) = O.text "Module " O.<> O.quotes (ppr m) O.<> O.text "@" O.<> ppr sp
 
 generateShallowReferencesMap
   :: Foldable f
