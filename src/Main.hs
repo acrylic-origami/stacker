@@ -133,15 +133,14 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
   mk_pt_store' :: Bool -> HieAST TypeIndex -> ([Identifier], PtStore TypeIndex)
   mk_pt_store' _ ast | has_node_constr fNS ast =
     let (fn_args, grhss) = first (M.keys) $ mconcat $ map arg_idents $ drop 1 $ nodeChildren ast
-        is_matchbind = any (\case { MatchBind -> True; _ -> False }) . S.toList . identInfo
         fn_names = (M.keys $ generateReferencesMap $ [head $ nodeChildren ast])
         (next_names, next_store) = mconcat $ map (mk_pt_store' False) grhss
-        fn_key = if has_node_constr ["HsLam"] ast then FnLam (nodeSpan ast) else FnNamed (nodeSpan ast) (head (if null fn_names then error (ppr_ast dflags ast) else fn_names))
-    in flip const (ast, dflags, (grhss), is_matchbind, (fn_names, fn_args), next_store, fn_key)
+        fn_key = if has_node_constr ["HsLam"] ast then BindLam (nodeSpan ast) else BindNamed (nodeSpan ast) (head (if null fn_names then error (ppr_ast dflags ast) else fn_names))
+    in flip const (ast, dflags, (grhss), (fn_names, fn_args), next_store, fn_key)
       $ (
           [] -- clear accumulated names
           , next_store
-          & ps_fns %~ (
+          & ps_binds %~ (
               flip (foldr (flip (M.insertWith (const . trace "Name is arg'd to two functions")) fn_key)) (S.toList $ S.fromList $ fn_args <> next_names) -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
             )
           & (ps_app_groups . ag_ident_map) %~ (flip (foldr (\(fn, n) m -> fromMaybe id (M.insert fn <$> (m M.!? n)) m)) (liftA2 (,) fn_names next_names))
@@ -153,24 +152,35 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
         is_this_case = has_node_constr ["HsCase"] ast
         -- next_within_app = not is_this_bind && (is_this_app || within_app)
         dig next_within_app = mconcat $ map (mk_pt_store' next_within_app) (nodeChildren ast)
-    in if | is_this_bind
-          -> let (bindee_names, bindee_store) = mk_pt_store' False $ (!!1) $ nodeChildren ast
-                 bg = BindGroup (nodeSpan ast) bindee_store
-                 (next_names, next_store) = dig False
-                 binder_idents = M.keys $ generateReferencesMap $ take 1 $ nodeChildren ast -- still strange that generateReferencesMap takes a foldable
-            in ( -- push all new bindings
+    in -- trace (ppr_safe dflags $ map (\ast' -> (nodeIdentifiers $ nodeInfo ast', nodeAnnotations $ nodeInfo ast', is_this_bind)) (ast : nodeChildren ast)) $
+       if | is_this_bind || is_this_case
+          -> let (bindee_names, bindee_store) =
+                    if is_this_bind
+                      then mk_pt_store' False $ (!!1) $ nodeChildren ast
+                      else mk_pt_store' False $ head $ nodeChildren ast
+                 (next_names, next_store) =
+                    if is_this_bind
+                      then dig False
+                      else mconcat $ map (mk_pt_store' False) binder_grhss
+                 (binder_identmap, binder_grhss) =
+                    if is_this_bind
+                      then (generateReferencesMap $ take 1 $ nodeChildren ast, undefined)
+                      else mconcat $ map arg_idents $ tail $ nodeChildren ast
+                 bindee_app_idents = S.toList $ S.fromList $ concat $ M.elems $ bindee_store ^. ps_app_groups ^. ag_ident_map
+                 binders = concatMap (uncurry (liftA2 (,)) . (pure *** map fst)) $ M.toList binder_identmap -- [(Span, Identifier)]
+                 bindee_binders = liftA2 (,) bindee_app_idents binders
+                 bindee_store' = bindee_store <> PtStore {
+                    _ps_app_groups = AppGroups {
+                      _ag_ident_map = M.fromList $ map (swap . (pure *** fst)) bindee_binders, -- a bit uncomfortable since I'm relying on none of the elements to change in the RHS of the map...
+                      _ag_span_map = mempty -- but that's where the "app_idents" in `bindee_app_idents` is coming from, so just don't break it.
+                    },
+                    _ps_binds = M.fromList $ concatMap (uncurry (liftA2 (,)) . (s_payload *** pure . uncurry BindNamed . swap)) bindee_binders
+                  }
+            in flip const (dflags, ast, bindee_names, bindee_store, binder_identmap, binder_grhss, next_names, next_store) $ (
                 bindee_names -- make binds be name boundaries
-                , next_store & (ps_binds %~ (\m -> foldr (flip M.insert bg) m binder_idents))
+                , next_store <> bindee_store'
               )
-          | is_this_case
-          -> let (bindee_names, bindee_store) = mk_pt_store' False $ head $ nodeChildren ast
-                 bg = BindGroup (nodeSpan ast) bindee_store
-                 (binder_identmap, binder_grhss) = mconcat $ map arg_idents $ tail $ nodeChildren ast
-                 (next_names, next_store) = mconcat $ map (mk_pt_store' False) binder_grhss
-            in (
-                bindee_names -- make binds be name boundaries
-                , next_store & (ps_binds %~ (\m -> foldr (flip M.insert bg) m (M.keys binder_identmap)))
-              )
+            
           | has_node_type ["HsExpr"] ast
           -> let (next_names, next_store) = dig True
                  this_names = M.keys $ generateShallowReferencesMap [ast]
@@ -184,6 +194,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                     )
                 ) -- form appgroup and shove names into it
               else (next_names <> this_names, next_store)
+              
           | otherwise -> dig within_app
           -- | otherwise
           -- -> let this_names = M.keys $ nodeIdentifiers $ nodeInfo ast -- only aggregate from the names that exist at this node
@@ -192,7 +203,11 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
           --         else next_store
           --   in ( this_names <> next_names, next_store' )
 
-pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either FnKey Identifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
+xselfmap :: (a -> a -> b) -> [a] -> [b]
+xselfmap f (a:l) = (map (f a) l) <> xselfmap f l
+xselfmap _ _ = []
+
+pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey Identifier -> ([Gr.Node], Gr (NodeKey a) ())
 pt_search dflags (PtStore {..}) cs_segs = 
   let state_step :: [NodeKey a] -> (M.Map (NodeKey a) Gr.Node, Gr.Node) -> (M.Map (NodeKey a) Gr.Node, Gr.Node)
       state_step [] t = t
@@ -202,47 +217,59 @@ pt_search dflags (PtStore {..}) cs_segs =
         (`evalState` 0) $
           return mempty
           & mapState (state_step (map NKApp $ concat $ M.elems (_ps_app_groups ^. ag_ident_map)))
-          & mapState (state_step (map NKBind $ M.elems (_ps_binds)))
-          & mapState (state_step (map NKFn $ M.elems (_ps_fns)))
+          & mapState (state_step (map NKBind $ M.elems _ps_binds))
         
       g0 = Gr.mkGraph (map swap $ M.toList nodes) mempty
-      r0 = (Nothing, g0)
+      r0 = ([], g0)
       
-      -- merge_decomps :: [(Maybe Gr.Node, Gr (NodeKey a) b)] -> ([Maybe Gr.Node], Gr (NodeKey a) b)
-      merge_decomps = foldr1 (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) . fmap (first pure) . toNonEmpty r0 -- egregiously wasteful; think of a better way
+      -- merge_decomps :: State (...) [([Gr.Node], Gr (NodeKey a) b)] -> State (...) ([Gr.Node], Gr (NodeKey a) b)
+      -- basically a custom mconcat
+      merge_decomps = fmap $ foldr1 (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) . toNonEmpty r0  -- egregiously wasteful; think of a better way
+      ident_in_cs ident = not $ ((null . segfind cs_segs) <$> (ident_span ident)) `elem` [Nothing, Just True]
       
       -- pt_search' :: Bool -> Identifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
-      pt_search' visited m_ident = 
-        let (((next_nodes, next_gr), this_node), within_cs) = case m_ident of
-              Left fk -> (
-                  if | m_this_node <- nodes M.!? (NKFn fk)
-                     -> case fk of
-                       FnNamed _fn_span fn_ident -> (first pure $ pt_search' visited (Right fn_ident), m_this_node)
-                       FnLam fn_span ->
-                         let next_nodes' = concatMap s_payload $ segfind (_ps_app_groups ^. ag_span_map) fn_span
-                         in (merge_decomps $ map (pt_search' visited . Right) next_nodes', m_this_node)
-                  , not $ null $ segfind cs_segs $ fnkey_span fk
-                )
+      pt_search' :: Either BindKey Identifier -> State (S.Set AppGroup) ([Gr.Node], Gr (NodeKey a) ())
+      pt_search' m_ident =
+        let ((next, this_nodes), within_cs) = case m_ident of
+              Left bk | m_this_node <- nodes M.!? NKBind bk ->
+                  case bk of
+                    BindNamed _fn_span fn_ident -> (
+                        (pt_search' (Right fn_ident), maybeToList m_this_node)
+                        , ident_in_cs fn_ident
+                      )
+                    BindLam fn_span ->
+                      let next_nodes' = concatMap s_payload $ segfind (_ps_app_groups ^. ag_span_map) fn_span
+                      in (
+                          (
+                              merge_decomps $ mapM (pt_search' . Right) $ unique next_nodes'
+                              , maybeToList m_this_node
+                            )
+                          , not $ null $ segfind cs_segs fn_span
+                        )
               Right ident -> (
                   if | Just ags' <- (_ps_app_groups ^. ag_ident_map) M.!? ident
-                     , ags <- S.fromList ags' S.\\ visited
                      -- , Nothing <- (nodes !? (NKApp ag)) >>= (flip match gr) -- crap, can't build the graph from the bottom up because I need to anti-cycle, so children will have to do the matching
-                     -> flip const dflags $ (
-                         merge_decomps $ map (pt_search' (S.union visited ags) . Right) $ concatMap s_payload $ S.toList ags
-                         , nodes M.!? NKFn (FnNamed undefined ident) -- don't worry about the undefined: the Map doesn't pay attention to it for the lookup
-                       )
-                         
-                     | Just bg@(BindGroup _sp pts) <- uncurry trace $ first (((ppr_safe dflags ident)++) . ppr_safe dflags) $ dupe $ _ps_binds M.!? ident -- uncurry trace $ first (((ppr_safe dflags ident)++) . ppr_safe dflags) $ dupe $ 
-                     , m_this_node <- nodes M.!? (NKBind bg)
-                     , ags <- pts ^. ps_app_groups ^. ag_ident_map
-                     -> (merge_decomps $ map (pt_search' (S.union visited (S.fromList $ concat $ M.elems ags)) . Right) (concatMap s_payload $ concat $ M.elems ags), m_this_node) -- TODO figure out what bindees are actually pointing to: for now, only bind directly to the shallow app-names          
+                     -> (
+                        do
+                          visited <- get
+                          let ags = S.fromList ags' S.\\ visited
+                              idents = unique $ concatMap s_payload $ S.toList ags
+                          put $ S.union visited ags
+                          merge_decomps $ mapM (pt_search' . Left . BindNamed undefined) idents
+                        , M.elems $ M.restrictKeys nodes (S.fromList $ map NKApp ags') -- don't worry about the undefined: the Map doesn't pay attention to it for the lookup
+                      )
                      
-                     | otherwise -> ((mempty, g0), Nothing)
-                  , ((not . null . segfind cs_segs) <$> (ident_span ident)) `elem` [Nothing, Just True]
+                     | otherwise -> (return r0, mempty)
+                  , ident_in_cs ident
                 )
         in if within_cs
-          then (this_node, foldr (\node -> fromMaybe id $ Gr.insEdge <$> ((, node, ()) <$> this_node)) next_gr (catMaybes next_nodes))
-          else r0
+          then bisequence (
+              return this_nodes,
+              fmap (\(next_nodes, next_gr) ->
+                  foldr (\(l, r) -> Gr.insEdge (l, r, ())) next_gr (liftA2 (,) next_nodes this_nodes)
+                ) next
+            )
+          else return r0
         
       -- pt_search False ident
       --   | 
@@ -253,7 +280,7 @@ pt_search dflags (PtStore {..}) cs_segs =
       --   | Just bind_pt <- _ps_binds M.!? ident
       --   =
           
-  in pt_search' mempty
+  in (`evalState` mempty) . pt_search'
 
 -- grhs_args :: HieAST a -> Maybe (IdentMap a)
 -- grhs_args ast | has_node_constr ["GRHS"] ast = Just $ generateReferencesMap [ast]
@@ -284,32 +311,32 @@ main = do
               . ((uncurry (liftA2 (fmap (\x -> [x]) . Tr.Node)) . second pure) &&& snd)
               . (bisequence . (pure &&& cs_span) *** concat)
             ) cs_tree -- (SrcSpan, Profile)
-          pts = map (mk_pt_store dflags) (concatMap (uncurry traceShow . first length . dupe . M.elems . getAsts . hie_asts) hies)
-          -- note: also able to map directly to Binds and FnKeys as well, since the PtStore map type right-hands can be coalesced to NodeKeys
-          bound'' :: STree.STree [STInterval.Interval (Locd ())] (Locd ())
-          bound'' = STree.fromList $ concatMap (map (seg2intervalish . (fnkey_span &&& const ())) . M.elems . (^. ps_fns)) pts
-          bound' = concatMap (map (seg2intervalish . (fnkey_span &&& id)) . M.elems . (^. ps_fns)) pts
+          pts = map (mk_pt_store dflags) (concatMap (M.elems . getAsts . hie_asts) hies)
+          -- note: also able to map directly to Binds and BindKeys as well, since the PtStore map type right-hands can be coalesced to NodeKeys
+          -- bound'' :: STree.STree [STInterval.Interval (Locd ())] (Locd ())
+          -- bound'' = STree.fromList $ concatMap (map (seg2intervalish . (bindkey_span &&& const ())) . M.elems . (^. ps_fns)) pts
+          bound' = concatMap (map (seg2intervalish . (bindkey_span &&& id)) . M.elems . (^. ps_binds)) pts
           bound = STree.fromList bound'
           
           ident_str_lookup = M.fromList . mapMaybe (\case
-              FnLam _ -> Nothing
-              FnNamed s i -> Just $ (
+              BindLam _ -> Nothing
+              BindNamed s i -> Just $ (
                 case i of 
                   Left mn -> (moduleNameString mn, "")
                   Right n -> (fromMaybe "" $ moduleNameString . moduleName <$> nameModule_maybe n, occNameString $ nameOccName n)
                 , s)
             )
-          bound''' :: M.Map (String, String) [Span]
-          bound''' = M.unionsWith (<>) (
-              -- map (M.map pure . ident_str_lookup . M.keys . (^. ps_binds)) pts -- i don't actually think that binds are referenced in the cost center stack trace
-              -- ++
-              map (
-                  M.map pure
-                  . ident_str_lookup
-                  . M.elems
-                  . (^. ps_fns)
-                ) pts
-            )
+          -- bound''' :: M.Map (String, String) [Span]
+          -- bound''' = M.unionsWith (<>) (
+          --     -- map (M.map pure . ident_str_lookup . M.keys . (^. ps_binds)) pts -- i don't actually think that binds are referenced in the cost center stack trace
+          --     -- ++
+          --     map (
+          --         M.map pure
+          --         . ident_str_lookup
+          --         . M.elems
+          --         . (^. ps_fns)
+          --       ) pts
+          --   )
           i_targ = read s_targ :: Int
           targ_fold css@(cs, _) l = 
             let next = if Prof.costCentreNo cs == i_targ then Just css else Nothing
@@ -320,23 +347,24 @@ main = do
           (targ, targ_t) = unzip $ mapMaybe (bisequence . second pure . Tr.foldTree targ_fold) loc_cs_forest
           -- targ_segs' = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . second (const ()) . swap)) targ_t
           targ_segs = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . swap)) targ_t
-          fks = ivl_payloads $ concatMap (STree.superintervalQuery bound . span2interval . snd) targ
+          bks = ivl_payloads $ concatMap (STree.superintervalQuery bound . span2interval . snd) targ
           grs = [
-              pt_search dflags pt targ_segs (Left fk)
-              | fk <- fks
+              pt_search dflags pt targ_segs (Left bk)
+              | bk <- bks
               , pt <- pts
             ]
       in flip const (targ, bound, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest)
         pure ()
         -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
-        putStrLn $ show $ [(b, sp, b == sp) | (_, sp) <- targ, b <- (bound''' M.! ("Main", "has_node_constr"))]
+        -- putStrLn $ show $ [(b, sp, b == sp) | (_, sp) <- targ, b <- (bound''' M.! ("Main", "has_node_constr"))]
         print $ concatMap (\(_, s) -> ivl_locs $ STree.superintervalQuery bound $ span2interval s) targ
         -- print bound''
         -- putStrLn $ ppr_safe dflags bound'
-        print (length fks, map ((length . (_ag_ident_map . _ps_app_groups) &&& length . _ps_fns &&& length . _ps_binds)) pts)
+        print (length bks, map ((length . (_ag_ident_map . _ps_app_groups) &&& length . _ps_binds)) pts)
         putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_t
-        -- ppr_ dflags $ map (S.fromList . M.elems . _ag_ident_map . _ps_app_groups) pts
+        const (pure ()) $ ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
         -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targ)
+        const (pure ()) $ print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
         putStrLn $ unlines $ map (\(n, gr) ->
             unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ S.toList $ S.fromList $ Gr.edges gr
           ) grs

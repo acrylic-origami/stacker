@@ -67,53 +67,44 @@ data AppGroups a = AppGroups {
 }
 makeLenses ''AppGroups
 
-data BindGroup a = BindGroup Span (PtStore a)
-
-instance Eq (BindGroup a) where
-  (BindGroup l _) == (BindGroup r _) = l == r
-  
-instance Ord (BindGroup a) where
-  (BindGroup l _) `compare` (BindGroup r _) = l `compare` r
-
 type IdentMap a = M.Map Identifier [(Span, IdentifierDetails a)]
-type IdentBindMap a = M.Map Identifier (BindGroup a)
+type IdentBindMap a = M.Map Identifier BindKey
 
-data FnKey = FnNamed Span Identifier | FnLam Span
+data BindKey = BindNamed Span Identifier | BindLam Span
 
-instance Eq FnKey where
-  (FnNamed _ l) == (FnNamed _ r) = l == r
-  (FnLam l) == (FnLam r) = l == r
+instance Eq BindKey where
+  (BindNamed _ l) == (BindNamed _ r) = l == r
+  (BindLam l) == (BindLam r) = l == r
   _ == _ = False
 
-instance Ord FnKey where
-  (FnNamed _ l) `compare` (FnNamed _ r) = l `compare` r
-  (FnLam l) `compare` (FnLam r) = l `compare` r
-  (FnNamed _ _) `compare` (FnLam _) = LT
-  (FnLam _) `compare` (FnNamed _ _) = GT
+instance Ord BindKey where
+  (BindNamed _ l) `compare` (BindNamed _ r) = l `compare` r
+  (BindLam l) `compare` (BindLam r) = l `compare` r
+  (BindNamed _ _) `compare` (BindLam _) = LT
+  (BindLam _) `compare` (BindNamed _ _) = GT
 
-fnkey_span :: FnKey -> Span
-fnkey_span (FnNamed sp _) = sp
-fnkey_span (FnLam sp) = sp
+bindkey_span :: BindKey -> Span
+bindkey_span (BindNamed sp _) = sp
+bindkey_span (BindLam sp) = sp
 
 data PtStore a = PtStore {
   _ps_app_groups :: AppGroups a, -- app groups: maps of spans and identifiers to disjoint sets of app groups
   -- _ps_cstree :: Segs (Maybe Prof.CostCentre), -- tree of coverage of cost center stacks
-  _ps_binds :: IdentBindMap a, -- map from binders to bindees
-  _ps_fns :: M.Map Identifier FnKey -- map from names in arg pats -> functions. many-one
+  _ps_binds :: IdentBindMap a -- map from binders to bindees
 }
 makeLenses ''PtStore
 
-data NodeKey a = NKApp AppGroup | NKBind (BindGroup a) | NKFn FnKey deriving (Eq, Ord)
+data NodeKey a = NKApp AppGroup | NKBind BindKey deriving (Eq, Ord)
 -- type NodeStore a = BM.Bimap (NodeKey a) Node
 
 -- data NodeStore a = NodeStore {
 --   ns_app_groups :: M.Map AppGroup Node,
 --   ns_binds :: M.Map (BindGroup a) Node,
---   ns_fns :: M.Map FnKey Node
+--   ns_fns :: M.Map BindKey Node
 -- }
 
 -- for BindPt, collapse IdentBindMap to RHS binds in AppGroups
--- data Pt a = AppPt AppGroup | BindPt AppGroup | FnPt FnKey deriving (Eq, Ord)
+-- data Pt a = AppPt AppGroup | BindPt AppGroup | FnPt BindKey deriving (Eq, Ord)
 
 -- data PatGroup t = PG {
 --   pg_from :: t Identifier,
@@ -128,12 +119,13 @@ instance (Applicative t, Monoid (t a)) => Measured a (t a) where
 
 instance Semigroup (AppGroups a) where
   (AppGroups la lb) <> (AppGroups ra rb) = AppGroups (M.unionWith (<>) la ra) (lb <> rb)
+  -- error "AppGroup is not mergeable" -- note: plain union vs unionWith due to no sensible way to merge Spans of AppGroups, which should be disjoint and predetermined
 instance Monoid (AppGroups a) where
   mempty = AppGroups mempty mempty
 instance Semigroup (PtStore a) where
-  (PtStore la lb lc) <> (PtStore ra rb rc) = PtStore (la <> ra) (lb <> rb) (lc <> rc)
+  (PtStore la lb) <> (PtStore ra rb) = PtStore (la <> ra) (lb <> rb)
 instance Monoid (PtStore a) where
-  mempty = PtStore mempty mempty mempty
+  mempty = PtStore mempty mempty
   
 instance Outputable a => Outputable (Locd a) where
   ppr (Locd l a) = O.text "@" <+> ppr l <+> O.colon $+$ ppr a
@@ -144,20 +136,15 @@ instance Outputable a => Outputable (Spand a) where
 instance Outputable (AppGroups a) where
   ppr (AppGroups m _) = ppr m
 
-instance Outputable (BindGroup a) where
-  ppr (BindGroup s pts) = O.text "BindGroup" <+> (O.brackets $ ppr s <+> O.arrow <+> ppr pts)
-
-instance Outputable FnKey where
-  ppr (FnNamed s i) = O.text "FnNamed" <+> ppr i <+> O.text "@" O.<> ppr s
-  ppr (FnLam s) = O.text "FnLam" <+> ppr s
+instance Outputable BindKey where
+  ppr (BindNamed s i) = O.text "BindNamed" <+> ppr i <+> O.text "@" O.<> ppr s
+  ppr (BindLam s) = O.text "BindLam" <+> ppr s
 
 instance Outputable (PtStore a) where
   ppr (PtStore {..}) = O.braces $
       ppr _ps_app_groups
       <+> ppr _ps_binds
-      <+> ppr _ps_fns
 
 instance Outputable (NodeKey a) where
   ppr (NKApp a) = O.text "NKApp" <+> ppr a
   ppr (NKBind b) = O.text "NKBind" <+> ppr b
-  ppr (NKFn f) = O.text "NKFn" <+> ppr f

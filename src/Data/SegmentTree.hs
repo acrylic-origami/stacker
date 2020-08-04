@@ -24,7 +24,7 @@
 -- referring to the number of intervals.
 -----------------------------------------------------------------------------
 
-module Data.SegmentTree ( R(..), Interval(..), Boundary(..), STree(..), fromList, insert, queryTree, countingQuery, stabbingQuery, intervalQuery, subintervalQuery, superintervalQuery ) where
+module Data.SegmentTree ( R(..), Interval(..), Boundary(..), STree(..), fromList, insert, queryTree, countingQuery, stabbingQuery, subintervalQuery, superintervalQuery ) where
 
 import Data.SegmentTree.Interval
 import Data.SegmentTree.Measured
@@ -148,21 +148,20 @@ queryTree t point = go t (R point)
         qright = if point `inside` (interval right) then go right point else mempty
 
 superintervalQuery :: (Monoid t, Ord a) => STree t a -> Interval a -> t
-superintervalQuery f t i =
+superintervalQuery t i =
   let ivl = interval t
       filt = if ivl `subinterval` i then id else const mempty
   in case t of
     Leaf u _ -> filt u
-    Branch u _ l r -> filt u <> intervalQuery f l i <> intervalQuery f r i 
+    Branch u _ l r -> filt u <> superintervalQuery l i <> superintervalQuery r i 
     
 subintervalQuery :: (Monoid t, Ord a) => STree t a -> Interval a -> t
 subintervalQuery t i | ivl <- interval t
                      , i `subinterval` ivl
                      = case t of
                        Leaf u _ -> u
-                       Branch u _ l r -> u <> intervalQuery l i <> intervalQuery r i
+                       Branch u _ l r -> u <> subintervalQuery l i <> subintervalQuery r i
                      | otherwise = mempty
-
 
 -- | Convenience wrapper around `queryTree'. Returns count of intervals covering the `point'
 countingQuery :: (Ord a, Num a, Num b) => STree (Sum b) a -> a -> b
