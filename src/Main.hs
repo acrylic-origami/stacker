@@ -177,7 +177,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                 bindee_names -- make binds be name boundaries
                 , next_store & (ps_binds %~ (\m -> foldr (flip M.insert bg) m (M.keys binder_identmap)))
               )
-          | otherwise
+          | has_node_type ["HsExpr"] ast
           -> let (next_names, next_store) = dig True
                  this_names = M.keys $ generateShallowReferencesMap [ast]
                  next_names' = next_names <> this_names
@@ -185,11 +185,12 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
               then (
                   [] -- clear accumulated names
                   , next_store & ps_app_groups %~ (
-                      (ag_span_map %~ (mappend (SegFlat [(nodeSpan ast, next_names')])))
-                      . (ag_ident_map %~ (\m -> foldr (flip M.insert next_names') m next_names')) -- up to 
+                      (ag_span_map %~ (<> (SegFlat [(nodeSpan ast, Spand (nodeSpan ast) next_names')])))
+                      . (ag_ident_map %~ (\m -> foldr (flip (M.insertWith (<>)) [Spand (nodeSpan ast) next_names']) m next_names')) -- up to 
                     )
                 ) -- form appgroup and shove names into it
               else (next_names <> this_names, next_store)
+          | otherwise -> dig within_app
           -- | otherwise
           -- -> let this_names = M.keys $ nodeIdentifiers $ nodeInfo ast -- only aggregate from the names that exist at this node
           --        next_store' = if not is_this_app
