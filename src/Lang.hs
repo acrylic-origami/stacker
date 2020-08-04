@@ -62,7 +62,7 @@ instance Monoid (Segs a) where
 type AppGroup = Spand [Identifier]
 
 data AppGroups a = AppGroups {
-  _ag_ident_map :: M.Map Identifier AppGroup, -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
+  _ag_ident_map :: M.Map Identifier [AppGroup], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
   _ag_span_map :: Segs AppGroup
 }
 makeLenses ''AppGroups

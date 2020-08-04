@@ -55,13 +55,7 @@ import GHC.Paths (libdir)
 import Lang
 import Util
 
-import Debug.Trace ( trace )
-
-ppr_safe :: Outputable a => DynFlags -> a -> String
-ppr_safe d = showSDoc d . interppSP . pure
-
-ppr_ :: Outputable a => DynFlags -> a -> IO ()
-ppr_ d = putStrLn . ppr_safe d
+import Debug.Trace ( trace, traceShow )
 
 dynFlagsForPrinting :: IO DynFlags
 dynFlagsForPrinting = do

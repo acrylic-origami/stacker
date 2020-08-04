@@ -3,6 +3,7 @@ module Util where
 
 import Control.Arrow ( (***), (&&&), first, second )
 import SrcLoc
+import Name ( nameSrcSpan )
 
 import qualified Data.SegmentTree as STree
 import qualified Data.SegmentTree.Interval as STInterval
@@ -14,10 +15,17 @@ import Data.Maybe ( catMaybes )
 import HieTypes
 import Lang
 
+import Outputable ( showSDoc, interppSP, Outputable(..), (<+>), ($+$) )
+import qualified Outputable as O
+import DynFlags ( DynFlags )
+
 import qualified Data.Graph.Inductive as Gr
+
+import Debug.Trace ( trace, traceShow )
 
 both f = (f *** f)
 swap (a, b) = (b, a)
+dupe a = (a, a)
 
 toNonEmpty _ (a:r) = a :| r
 toNonEmpty a _ = a :| []
@@ -53,6 +61,22 @@ gr_prettify sa sb g = foldr (showsContext . Gr.context g) id (Gr.nodes g) ""
                                 . showString "->" . shows (map (first sb) s)
                                 . ('\n':) . sg
 
+passtrace :: Show a => a -> a
+passtrace = uncurry traceShow . dupe
+
+ppr_safe :: Outputable a => DynFlags -> a -> String
+ppr_safe d = showSDoc d . interppSP . pure
+
+ppr_ :: Outputable a => DynFlags -> a -> IO ()
+ppr_ d = putStrLn . ppr_safe d
+
+ppr_nk :: DynFlags -> NodeKey a -> String 
+ppr_nk dflags = O.showSDoc dflags . ppr_nk' where
+  ppr_nk' (NKApp ag) = O.text "App @" O.<> (ppr $ s_span ag)
+  ppr_nk' (NKBind (BindGroup bsp _)) = O.text "Bind @" O.<> ppr bsp
+  ppr_nk' (NKFn (FnLam sp)) = O.text "Lam @" O.<> ppr sp
+  ppr_nk' (NKFn (FnNamed sp (Right n))) = O.text "FnNamed " O.<> O.quotes (ppr n) O.<> O.text "@" O.<> ppr sp
+  ppr_nk' (NKFn (FnNamed sp (Left m))) = O.text "Module " O.<> O.quotes (ppr m) O.<> O.text "@" O.<> ppr sp
 
 generateShallowReferencesMap
   :: Foldable f
