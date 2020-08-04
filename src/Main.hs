@@ -222,45 +222,54 @@ pt_search dflags (PtStore {..}) cs_segs =
       g0 = Gr.mkGraph (map swap $ M.toList nodes) mempty
       r0 = ([], g0)
       
-      -- merge_decomps :: [([Gr.Node], Gr (NodeKey a) b)] -> ([Gr.Node], Gr (NodeKey a) b)
+      -- merge_decomps :: State (...) [([Gr.Node], Gr (NodeKey a) b)] -> State (...) ([Gr.Node], Gr (NodeKey a) b)
       -- basically a custom mconcat
-      merge_decomps = foldr1 (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) . toNonEmpty r0 -- egregiously wasteful; think of a better way
+      merge_decomps = fmap $ foldr1 (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) . toNonEmpty r0  -- egregiously wasteful; think of a better way
       ident_in_cs ident = not $ ((null . segfind cs_segs) <$> (ident_span ident)) `elem` [Nothing, Just True]
       
       -- pt_search' :: Bool -> Identifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
-      pt_search' visited m_ident =
-        let (((next_nodes, next_gr), this_nodes), within_cs) = case m_ident of
+      pt_search' :: Either BindKey Identifier -> State (S.Set AppGroup) ([Gr.Node], Gr (NodeKey a) ())
+      pt_search' m_ident =
+        let ((next, this_nodes), within_cs) = case m_ident of
               Left bk | m_this_node <- nodes M.!? NKBind bk ->
                   case bk of
                     BindNamed _fn_span fn_ident -> (
-                        trace "1" $ (pt_search' visited (Right fn_ident), maybeToList m_this_node)
+                        (pt_search' (Right fn_ident), maybeToList m_this_node)
                         , ident_in_cs fn_ident
                       )
                     BindLam fn_span ->
                       let next_nodes' = concatMap s_payload $ segfind (_ps_app_groups ^. ag_span_map) fn_span
                       in (
                           (
-                              traceShow (length next_nodes') $ merge_decomps $ map (\(i, j) -> pt_search' visited $ Right j) $ zip [0..] next_nodes'
+                              merge_decomps $ mapM (pt_search' . Right) $ unique next_nodes'
                               , maybeToList m_this_node
                             )
                           , not $ null $ segfind cs_segs fn_span
                         )
               Right ident -> (
                   if | Just ags' <- (_ps_app_groups ^. ag_ident_map) M.!? ident
-                     , ags <- S.fromList ags' S.\\ visited
-                     , idents <- concatMap s_payload $ S.toList ags
                      -- , Nothing <- (nodes !? (NKApp ag)) >>= (flip match gr) -- crap, can't build the graph from the bottom up because I need to anti-cycle, so children will have to do the matching
                      -> (
-                         traceShow (length idents) $ merge_decomps $ map (\(i, j) -> pt_search' (S.union visited ags) $ Left (BindNamed undefined j)) $ zip [0..] idents
-                         , M.elems $ M.restrictKeys nodes (S.map NKApp ags) -- don't worry about the undefined: the Map doesn't pay attention to it for the lookup
-                       )
+                        do
+                          visited <- get
+                          let ags = S.fromList ags' S.\\ visited
+                              idents = unique $ concatMap s_payload $ S.toList ags
+                          put $ S.union visited ags
+                          merge_decomps $ mapM (pt_search' . Left . BindNamed undefined) idents
+                        , M.elems $ M.restrictKeys nodes (S.fromList $ map NKApp ags') -- don't worry about the undefined: the Map doesn't pay attention to it for the lookup
+                      )
                      
-                     | otherwise -> (r0, mempty)
+                     | otherwise -> (return r0, mempty)
                   , ident_in_cs ident
                 )
         in if within_cs
-          then (this_nodes, foldr (\(l, r) -> Gr.insEdge (l, r, ())) next_gr (liftA2 (,) next_nodes this_nodes))
-          else r0
+          then bisequence (
+              return this_nodes,
+              fmap (\(next_nodes, next_gr) ->
+                  foldr (\(l, r) -> Gr.insEdge (l, r, ())) next_gr (liftA2 (,) next_nodes this_nodes)
+                ) next
+            )
+          else return r0
         
       -- pt_search False ident
       --   | 
@@ -271,7 +280,7 @@ pt_search dflags (PtStore {..}) cs_segs =
       --   | Just bind_pt <- _ps_binds M.!? ident
       --   =
           
-  in pt_search' mempty
+  in (`evalState` mempty) . pt_search'
 
 -- grhs_args :: HieAST a -> Maybe (IdentMap a)
 -- grhs_args ast | has_node_constr ["GRHS"] ast = Just $ generateReferencesMap [ast]
@@ -353,10 +362,10 @@ main = do
         -- putStrLn $ ppr_safe dflags bound'
         print (length bks, map ((length . (_ag_ident_map . _ps_app_groups) &&& length . _ps_binds)) pts)
         putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_t
-        ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
+        const (pure ()) $ ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
         -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targ)
         const (pure ()) $ print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
-        const (pure ()) $ putStrLn $ unlines $ map (\(n, gr) ->
+        putStrLn $ unlines $ map (\(n, gr) ->
             unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ S.toList $ S.fromList $ Gr.edges gr
           ) grs
         {- $ map (\case -- gr_prettify (ppr_safe dflags) id
