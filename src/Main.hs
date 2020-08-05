@@ -148,13 +148,13 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
             , next_store
             & ps_binds %~ (
                 (bg_arg_bnd_map %~ (
-                    flip (foldr (flip (M.insertWithKey (\n a b -> trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a)) fn_key)) (unique fn_args)
+                    flip (foldr (flip (M.insertWithKey (\n a b -> trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a)) fn_key)) (map s_payload $ unique fn_args)
                   ))
                 . (
                     case fn_key of 
                       BindNamed i ->
                         (bg_named_lookup %~ S.insert i)
-                        . (bg_bnd_app_map %~ (M.insertWith (<>) i next_names))
+                        . (bg_bnd_app_map %~ (M.insertWith (<>) (s_payload i) next_names))
                       _ -> id
                   )
                  -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
@@ -186,7 +186,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                  binder_store' = binder_store & (ps_binds %~ mappend BindGroups {
                     _bg_named_lookup = S.fromList bindees,
                     _bg_arg_bnd_map = mempty,
-                    _bg_bnd_app_map = M.fromList $ map (,binder_ags) bindees
+                    _bg_bnd_app_map = M.fromList $ map ((,binder_ags) . s_payload) bindees
                   })
             in flip const (dflags, ast, binder_ags, binder_store) $ (
                 binder_ags <> next_names -- make binds be name boundaries
@@ -203,7 +203,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                 , if not within_app
                   then next_store & ps_app_groups %~ (
                       (ag_span_map %~ mappend (SegFlat [Spand (nodeSpan ast) next_ag]))
-                      . (ag_ident_map %~ (\m -> foldr (flip (M.insertWith (<>)) [next_ag]) m next_names')) -- up to 
+                      . (ag_ident_map %~ (\m -> foldr (flip (M.insertWith (<>)) [next_ag]) m (map s_payload next_names'))) -- up to 
                     )
                   else next_store
               ) -- form appgroup and shove names into it
@@ -233,7 +233,7 @@ pt_search dflags (PtStore {..}) cs_segs =
         (`evalState` 0) $
           return mempty
           & mapState (state_step (map NKApp $ concat $ M.elems (_ps_app_groups ^. ag_ident_map)))
-          & mapState (state_step (map NKBind $ map BindNamed $ M.keys $ _ps_binds ^. bg_bnd_app_map))
+          & mapState (state_step (map (NKBind . BindNamed) $ S.elems $ _ps_binds ^. bg_named_lookup))
         
       g0 = Gr.mkGraph (map swap $ M.toList nodes) mempty
       r0 = ([], g0)
@@ -259,15 +259,15 @@ pt_search dflags (PtStore {..}) cs_segs =
                 let (ags, within_cs) = case bk of
                       BindNamed fn_ident -> (
                           concat $
-                            (maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? fn_ident)
-                            <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident)
+                            (maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? (s_payload fn_ident))
+                            <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) M.!? (s_payload fn_ident))
                           , ident_in_cs fn_ident
                         )
                       BindLam fn_span -> (
                           segfind (_ps_app_groups ^. ag_span_map) fn_span
                           , not $ null $ segfind cs_segs fn_span
                         )
-                in trace (ppr_safe dflags ags) $ (
+                in (
                     (
                         with_ags (merge_decomps . mapM (pt_search' . Right)) ags
                         , M.elems $ M.restrictKeys nodes (S.fromList $ map NKApp ags) -- don't worry about the undefined: the Map doesn't pay attention to it for the lookup
@@ -276,12 +276,12 @@ pt_search dflags (PtStore {..}) cs_segs =
                   )
               Right ident -> (
                   if 
-                     | Just ags <- (_ps_binds ^. bg_bnd_app_map) M.!? ident
+                     | Just ags <- (_ps_binds ^. bg_bnd_app_map) M.!? (s_payload ident)
                      -> (
                         with_ags (merge_decomps . mapM (pt_search' . Right)) ags,
                         mapMaybe ((nodes M.!?) . NKApp) ags
                       )
-                     | Just bk <- (_ps_binds ^. bg_arg_bnd_map) M.!? ident
+                     | Just bk <- (_ps_binds ^. bg_arg_bnd_map) M.!? (s_payload ident)
                      -- , Nothing <- (nodes !? (NKApp ag)) >>= (flip match gr) -- crap, can't build the graph from the bottom up because I need to anti-cycle, so children will have to do the matching
                      -> (
                         pt_search' (Left bk),
