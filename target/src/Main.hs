@@ -7,5 +7,7 @@ foo x | Just y <- x = case y of
            Nothing
 foo _ = 3
 
+a !! b = ()
+
 main :: IO ()
 main = pure ()

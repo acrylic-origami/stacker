@@ -50,6 +50,8 @@ instance Eq (Spand a) where
 instance Ord (Spand a) where
   (Spand l _) `compare` (Spand r _) = l `compare` r
   
+type LIdentifier = Spand Identifier
+  
 data Segs a = SegFlat [Spand a] | SegTree (STree.STree [Interval (Locd a)] (Locd a)) deriving Show
 
 instance Semigroup (Segs a) where
@@ -58,21 +60,21 @@ instance Semigroup (Segs a) where
 instance Monoid (Segs a) where
   mempty = SegFlat []
 
-type AppGroup = Spand [Identifier]
+type AppGroup = Spand [LIdentifier]
 
 data AppGroups a = AppGroups {
-  _ag_ident_map :: M.Map Identifier [AppGroup], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
+  _ag_ident_map :: M.Map LIdentifier [AppGroup], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
   _ag_span_map :: Segs AppGroup
 } -- NOTE! AppGroups are used to find instances of _usages_ of _bindings_ after tracing an ident to an _argument_ only. NOT for idents -> other idents. Instead trace those to their binding sites, then to their RHS closed dependencies
 makeLenses ''AppGroups
 
-data BindKey = BindNamed Identifier | BindLam Span deriving (Eq, Ord)
+data BindKey = BindNamed LIdentifier | BindLam Span deriving (Eq, Ord)
 
-type IdentMap a = M.Map Identifier [(Span, IdentifierDetails a)]
+type IdentMap a = M.Map LIdentifier [(Span, IdentifierDetails a)]
 data BindGroups = BindGroups {
-  _bg_arg_bnd_map :: M.Map Identifier BindKey,
-  _bg_bnd_app_map :: M.Map Identifier [AppGroup],
-  _bg_named_lookup :: S.Set (Spand Identifier) -- find BindNamed
+  _bg_arg_bnd_map :: M.Map LIdentifier BindKey,
+  _bg_bnd_app_map :: M.Map LIdentifier [AppGroup],
+  _bg_named_lookup :: S.Set LIdentifier -- find BindNamed
 }
 makeLenses ''BindGroups
 

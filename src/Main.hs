@@ -128,8 +128,8 @@ shallower f a | f a = ([], [a])
 lift_ctx_info :: (ContextInfo -> Bool) -> (HieAST a -> Bool)
 lift_ctx_info f = (any (any f . S.toList . identInfo)) . nodeIdentifiers . nodeInfo
 
-arg_idents :: HieAST a -> ((IdentMap a, IdentMap a), [HieAST a])
-arg_idents = first (both generateShallowReferencesMap . partition (lift_ctx_info $ \case { MatchBind -> True; _ -> False })) . shallower (has_node_constr ["GRHS"])
+arg_idents :: HieAST a -> (([LIdentifier], [LIdentifier]), [HieAST a])
+arg_idents = first (both (concatMap getShallowReferences) . partition (lift_ctx_info $ \case { MatchBind -> True; _ -> False })) . shallower (has_node_constr ["GRHS"])
 
 mk_pt_store :: DynFlags -> HieAST TypeIndex -> PtStore TypeIndex
 mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree $ STree.fromList $ map seg2intervalish s)) . snd . mk_pt_store' False . ([],) where
@@ -137,7 +137,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
   mk_pt_store' _ (ast_stack, ast)
     | has_node_constr fNS ast
     , all (not . has_node_constr ["HsCase", "HsLamCase"]) ast_stack
-    = let ((fn_names, fn_args), grhss) = first (both M.keys) $ mconcat $ map arg_idents $ nodeChildren ast
+    = let ((fn_names, fn_args), grhss) = mconcat $ map arg_idents $ nodeChildren ast
           next_ast_stack = (ast : ast_stack)
           -- fn_names = (M.keys $ generateReferencesMap $ [head $ nodeChildren ast])
           (next_names, next_store) = mconcat $ map (mk_pt_store' False . (next_ast_stack,)) grhss
@@ -153,7 +153,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                 . (
                     case fn_key of 
                       BindNamed i ->
-                        (bg_named_lookup %~ S.insert (Spand (nodeSpan ast) i))
+                        (bg_named_lookup %~ S.insert i)
                         . (bg_bnd_app_map %~ (M.insertWith (<>) i next_names))
                       _ -> id
                   )
@@ -174,24 +174,28 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                     if is_this_bind
                       then mk_pt_store' False (next_ast_stack, (!!1) $ nodeChildren ast)
                       else mk_pt_store' False (next_ast_stack, head $ nodeChildren ast)
-                 (bindee_identmap, (next_names, next_store)) =
+                 bindees :: [LIdentifier]
+                 (bindees, (next_names, next_store)) =
                     if is_this_bind
-                      then (generateReferencesMap $ take 1 $ nodeChildren ast, mempty)
+                      then (
+                          map (uncurry (flip Spand)) $ concatMap (bisequence . (pure *** map fst)) $ M.toList $ generateReferencesMap $ take 1 $ nodeChildren ast
+                          , mempty
+                        )
                       else (snd *** mconcat . map (mk_pt_store' False . (next_ast_stack,))) $ mconcat $ map arg_idents $ tail $ nodeChildren ast
-                 bindees = concatMap (uncurry (liftA2 (,)) . (pure *** map fst)) $ M.toList bindee_identmap -- [(Span, Identifier)]
+                 -- bindees = concatMap (uncurry (liftA2 (,)) . (pure *** map fst)) $ M.toList bindee_identmap -- [(Span, Identifier)]
                  binder_store' = binder_store & (ps_binds %~ mappend BindGroups {
-                    _bg_named_lookup = S.fromList $ map (uncurry $ flip Spand) bindees,
+                    _bg_named_lookup = S.fromList bindees,
                     _bg_arg_bnd_map = mempty,
-                    _bg_bnd_app_map = M.fromList $ map ((,binder_ags) . fst) bindees
+                    _bg_bnd_app_map = M.fromList $ map (,binder_ags) bindees
                   })
-            in flip const (dflags, ast, binder_ags, binder_store, bindee_identmap) $ (
+            in flip const (dflags, ast, binder_ags, binder_store) $ (
                 binder_ags <> next_names -- make binds be name boundaries
                 , binder_store' <> next_store
               )
             
           | has_node_type ["HsExpr"] ast
           -> let (next_ags, next_store) = dig True
-                 this_names = M.keys $ generateShallowReferencesMap [ast]
+                 this_names = getShallowReferences ast
                  next_names' = concatMap s_payload next_ags <> this_names -- throw out locs of direct descendants: they're part of _this_ app group now
                  next_ag = Spand (nodeSpan ast) next_names'
             in (
@@ -219,7 +223,7 @@ xselfmap _ _ = []
 type NodeGr a = Gr (NodeKey a) ()
 type NodeState a = State (S.Set AppGroup) ([Gr.Node], NodeGr a)
 
-pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey Identifier -> ([Gr.Node], NodeGr a)
+pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey LIdentifier -> ([Gr.Node], NodeGr a)
 pt_search dflags (PtStore {..}) cs_segs = 
   let state_step :: [NodeKey a] -> (M.Map (NodeKey a) Gr.Node, Gr.Node) -> (M.Map (NodeKey a) Gr.Node, Gr.Node)
       state_step [] t = t
@@ -237,9 +241,9 @@ pt_search dflags (PtStore {..}) cs_segs =
       -- merge_decomps :: State (...) [([Gr.Node], Gr (NodeKey a) b)] -> State (...) ([Gr.Node], Gr (NodeKey a) b)
       -- basically a custom mconcat
       merge_decomps = fmap $ foldr1 (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) . toNonEmpty r0  -- egregiously wasteful; think of a better way
-      ident_in_cs ident = not $ ((null . segfind cs_segs) <$> (ident_span ident)) `elem` [Nothing, Just True]
+      ident_in_cs ident = not $ null $ segfind cs_segs $ s_span ident
       
-      with_ags :: ([Identifier] -> NodeState a) -> [AppGroup] -> NodeState a
+      with_ags :: ([LIdentifier] -> NodeState a) -> [AppGroup] -> NodeState a
       with_ags f ags = do
         visited <- get
         let ags' = S.fromList ags S.\\ visited
@@ -247,8 +251,8 @@ pt_search dflags (PtStore {..}) cs_segs =
         put $ S.union visited ags'
         f idents
       
-      -- pt_search' :: Bool -> Identifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
-      pt_search' :: Either BindKey Identifier -> NodeState a
+      -- pt_search' :: Bool -> LIdentifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
+      pt_search' :: Either BindKey LIdentifier -> NodeState a
       pt_search' m_ident =
         let ((next, this_nodes), within_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
               Left bk ->
@@ -340,7 +344,9 @@ main = do
           -- note: also able to map directly to Binds and BindKeys as well, since the PtStore map type right-hands can be coalesced to NodeKeys
           -- bound'' :: STree.STree [STInterval.Interval (Locd ())] (Locd ())
           -- bound'' = STree.fromList $ concatMap (map (seg2intervalish . (bindkey_span &&& const ())) . M.elems . (^. ps_fns)) pts
-          bound' = concatMap (map seg2intervalish . S.elems . (^. (ps_binds . bg_named_lookup))) pts
+          
+          bound' = concatMap (map seg2intervalish . map (uncurry Spand . (s_span &&& id)) . S.elems . (^. (ps_binds . bg_named_lookup))) pts
+          bound :: STree.STree [STInterval.Interval (Locd LIdentifier)] (Locd LIdentifier)
           bound = STree.fromList bound'
           
           -- ident_str_lookup = M.fromList . mapMaybe (\case
@@ -381,7 +387,8 @@ main = do
       in flip const (targ, bound, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest)
         pure ()
         -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
-        putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
+        -- putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
+        -- ppr_ dflags bound'
         -- putStrLn $ show $ [(b, sp, b == sp) | (_, sp) <- targ, b <- (bound''' M.! ("Main", "merge_decomps"))]
         print $ concatMap (\(_, s) -> ivl_locs $ STree.superintervalQuery bound $ span2interval s) targ
         -- print bound''
@@ -390,7 +397,7 @@ main = do
         putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_t
         const (pure ()) $ ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
         -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targ)
-        const (pure ()) $ print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
+        -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
         putStrLn $ unlines $ map (\(n, gr) ->
             unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ S.toList $ S.fromList $ Gr.edges gr
           ) grs

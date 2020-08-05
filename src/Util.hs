@@ -10,6 +10,7 @@ import qualified Data.SegmentTree.Interval as STInterval
 
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import Data.Bitraversable ( bisequence )
 import Data.List.NonEmpty ( NonEmpty(..) )
 import Data.List ( intersect )
 import Data.Maybe ( catMaybes )
@@ -53,11 +54,6 @@ segfind :: Segs a -> Span -> [a]
 segfind (SegFlat l) sp = map s_payload $ filter ((`containsSpan` sp) . s_span) l
 segfind (SegTree t) sp = ivl_payloads $ STree.subintervalQuery t (span2interval sp)
 
-ident_span :: Identifier -> Maybe Span
-ident_span (Right n) | RealSrcSpan sp <- nameSrcSpan n = Just sp
-                     | otherwise = Nothing
-ident_span _ = Nothing
-
 gr_prettify :: (Gr.DynGraph gr, Show a, Show b) => (c -> a) -> (d -> b) -> gr c d -> String
 gr_prettify sa sb g = foldr (showsContext . Gr.context g) id (Gr.nodes g) ""
   where
@@ -78,13 +74,8 @@ ppr_nk :: DynFlags -> NodeKey a -> String
 ppr_nk dflags = O.showSDoc dflags . ppr_nk' where
   ppr_nk' (NKApp ag) = O.text "App @" O.<> (ppr $ s_span ag)
   ppr_nk' (NKBind (BindLam sp)) = O.text "Lam @" O.<> ppr sp
-  ppr_nk' (NKBind (BindNamed (Right n))) = O.text "BindNamed " O.<> O.quotes (ppr n)
-  ppr_nk' (NKBind (BindNamed (Left m))) = O.text "Module " O.<> O.quotes (ppr m)
+  ppr_nk' (NKBind (BindNamed (Spand sp (Right n)))) = O.text "BindNamed " O.<> O.quotes (ppr n) <+> O.text "@" O.<> ppr sp
+  ppr_nk' (NKBind (BindNamed (Spand sp (Left m)))) = O.text "Module " O.<> O.quotes (ppr m) <+> O.text "@" O.<> ppr sp
 
-generateShallowReferencesMap
-  :: Foldable f
-  => f (HieAST a)
-  -> M.Map Identifier [(Span, IdentifierDetails a)]
-generateShallowReferencesMap = foldr (\ast m -> M.unionWith (++) (this ast) m) M.empty
-  where
-    this ast = fmap (pure . (nodeSpan ast,)) $ nodeIdentifiers $ nodeInfo ast
+getShallowReferences :: HieAST a -> [LIdentifier]
+getShallowReferences ast = map (Spand (nodeSpan ast)) $ M.keys $ nodeIdentifiers $ nodeInfo ast
