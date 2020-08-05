@@ -295,7 +295,7 @@ pt_search dflags (PtStore {..}) cs_segs =
           then bisequence (
               return this_nodes,
               fmap (\(next_nodes, next_gr) ->
-                  foldr (\(l, r) -> Gr.insEdge (l, r, ())) next_gr (liftA2 (,) next_nodes this_nodes)
+                  foldr (\(l, r) -> Gr.insEdge (l, r, ())) next_gr (liftA2 (,) this_nodes next_nodes)
                 ) next
             )
           else return r0
