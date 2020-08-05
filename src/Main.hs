@@ -216,7 +216,10 @@ xselfmap :: (a -> a -> b) -> [a] -> [b]
 xselfmap f (a:l) = (map (f a) l) <> xselfmap f l
 xselfmap _ _ = []
 
-pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey Identifier -> ([Gr.Node], Gr (NodeKey a) ())
+type NodeGr a = Gr (NodeKey a) ()
+type NodeState a = State (S.Set AppGroup) ([Gr.Node], NodeGr a)
+
+pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey Identifier -> ([Gr.Node], NodeGr a)
 pt_search dflags (PtStore {..}) cs_segs = 
   let state_step :: [NodeKey a] -> (M.Map (NodeKey a) Gr.Node, Gr.Node) -> (M.Map (NodeKey a) Gr.Node, Gr.Node)
       state_step [] t = t
@@ -236,29 +239,34 @@ pt_search dflags (PtStore {..}) cs_segs =
       merge_decomps = fmap $ foldr1 (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) . toNonEmpty r0  -- egregiously wasteful; think of a better way
       ident_in_cs ident = not $ ((null . segfind cs_segs) <$> (ident_span ident)) `elem` [Nothing, Just True]
       
+      with_ags :: ([Identifier] -> NodeState a) -> [AppGroup] -> NodeState a
+      with_ags f ags = do
+        visited <- get
+        let ags' = S.fromList ags S.\\ visited
+            idents = unique $ concatMap s_payload $ S.toList ags'
+        put $ S.union visited ags'
+        f idents
+      
       -- pt_search' :: Bool -> Identifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
-      pt_search' :: Either BindKey Identifier -> State (S.Set AppGroup) ([Gr.Node], Gr (NodeKey a) ())
+      pt_search' :: Either BindKey Identifier -> NodeState a
       pt_search' m_ident =
-        let ((next, this_nodes), within_cs) = case m_ident of
-              Left bk | m_this_node <- nodes M.!? NKBind bk ->
-                let (ags', within_cs) = case bk of
+        let ((next, this_nodes), within_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
+              Left bk ->
+                let (ags, within_cs) = case bk of
                       BindNamed fn_ident -> (
-                          concat $ maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? fn_ident
+                          concat $
+                            (maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? fn_ident)
+                            <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident)
                           , ident_in_cs fn_ident
                         )
                       BindLam fn_span -> (
                           segfind (_ps_app_groups ^. ag_span_map) fn_span
                           , not $ null $ segfind cs_segs fn_span
                         )
-                in (
+                in trace (ppr_safe dflags ags) $ (
                     (
-                        do
-                          visited <- get
-                          let ags = S.fromList ags' S.\\ visited
-                              idents = unique $ concatMap s_payload $ S.toList ags
-                          put $ S.union visited ags
-                          merge_decomps $ mapM (pt_search' . Left . BindNamed) idents
-                        , M.elems $ M.restrictKeys nodes (S.fromList $ map NKApp ags') -- don't worry about the undefined: the Map doesn't pay attention to it for the lookup
+                        with_ags (merge_decomps . mapM (pt_search' . Right)) ags
+                        , M.elems $ M.restrictKeys nodes (S.fromList $ map NKApp ags) -- don't worry about the undefined: the Map doesn't pay attention to it for the lookup
                       )
                     , within_cs
                   )
@@ -266,7 +274,7 @@ pt_search dflags (PtStore {..}) cs_segs =
                   if 
                      | Just ags <- (_ps_binds ^. bg_bnd_app_map) M.!? ident
                      -> (
-                        merge_decomps $ mapM (pt_search' . Right) (concatMap s_payload ags),
+                        with_ags (merge_decomps . mapM (pt_search' . Right)) ags,
                         mapMaybe ((nodes M.!?) . NKApp) ags
                       )
                      | Just bk <- (_ps_binds ^. bg_arg_bnd_map) M.!? ident
