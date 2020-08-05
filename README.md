@@ -11,9 +11,14 @@ _Note: HIE files are a new feature of **GHC 8.8**._
 Try running stacker on itself!
 
 1. Build stacker first to produce HIE and prof files.
-2. Open `stacker.prof` and find a function call of interest.
-3. Grab the "Cost centre ID" (the fourth column, just after the source location)
-4. `$ cabal run stacker -- <cost-center-id> stacker.prof hie/`
+1. Open `stacker.prof` and find a function call of interest.
+1. Grab the "Cost centre ID" (the fourth column, just after the source location)
+1. Run:
+
+    ```bash
+    $ mv stacker.prof stacker.prof.bak
+    $ cabal run stacker -- <cost-center-id> stacker.prof.bak hie/
+    ```
 
 You should see a list of graph edges in the dependency graph.
 
