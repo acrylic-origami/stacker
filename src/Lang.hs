@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances, DerivingStrategies #-}
 module Lang where
 
 import Control.Lens ( makeLenses )
@@ -50,8 +50,7 @@ instance Eq (Spand a) where
 instance Ord (Spand a) where
   (Spand l _) `compare` (Spand r _) = l `compare` r
   
-type Seg a = (Span, a)
-data Segs a = SegFlat [Seg a] | SegTree (STree.STree [Interval (Locd a)] (Locd a)) deriving Show
+data Segs a = SegFlat [Spand a] | SegTree (STree.STree [Interval (Locd a)] (Locd a)) deriving Show
 
 instance Semigroup (Segs a) where
   (SegFlat l) <> (SegFlat r) = SegFlat (l <> r)
@@ -64,33 +63,28 @@ type AppGroup = Spand [Identifier]
 data AppGroups a = AppGroups {
   _ag_ident_map :: M.Map Identifier [AppGroup], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
   _ag_span_map :: Segs AppGroup
-}
+} -- NOTE! AppGroups are used to find instances of _usages_ of _bindings_ after tracing an ident to an _argument_ only. NOT for idents -> other idents. Instead trace those to their binding sites, then to their RHS closed dependencies
 makeLenses ''AppGroups
 
+data BindKey = BindNamed Identifier | BindLam Span deriving (Eq, Ord)
+
 type IdentMap a = M.Map Identifier [(Span, IdentifierDetails a)]
-type IdentBindMap a = M.Map Identifier BindKey
+data BindGroups = BindGroups {
+  _bg_arg_bnd_map :: M.Map Identifier BindKey,
+  _bg_bnd_app_map :: M.Map Identifier [AppGroup],
+  _bg_named_lookup :: S.Set (Spand Identifier) -- find BindNamed
+}
+makeLenses ''BindGroups
 
-data BindKey = BindNamed Span Identifier | BindLam Span
-
-instance Eq BindKey where
-  (BindNamed _ l) == (BindNamed _ r) = l == r
-  (BindLam l) == (BindLam r) = l == r
-  _ == _ = False
-
-instance Ord BindKey where
-  (BindNamed _ l) `compare` (BindNamed _ r) = l `compare` r
-  (BindLam l) `compare` (BindLam r) = l `compare` r
-  (BindNamed _ _) `compare` (BindLam _) = LT
-  (BindLam _) `compare` (BindNamed _ _) = GT
-
-bindkey_span :: BindKey -> Span
-bindkey_span (BindNamed sp _) = sp
-bindkey_span (BindLam sp) = sp
+instance Semigroup BindGroups where
+  (BindGroups la lb lc) <> (BindGroups ra rb rc) = BindGroups (la <> ra) (M.unionWith (<>) lb rb) (lc <> rc)
+instance Monoid BindGroups where
+  mempty = BindGroups mempty mempty mempty
 
 data PtStore a = PtStore {
   _ps_app_groups :: AppGroups a, -- app groups: maps of spans and identifiers to disjoint sets of app groups
   -- _ps_cstree :: Segs (Maybe Prof.CostCentre), -- tree of coverage of cost center stacks
-  _ps_binds :: IdentBindMap a -- map from binders to bindees
+  _ps_binds :: BindGroups -- map from binders to bindees
 }
 makeLenses ''PtStore
 
@@ -137,8 +131,11 @@ instance Outputable (AppGroups a) where
   ppr (AppGroups m _) = ppr m
 
 instance Outputable BindKey where
-  ppr (BindNamed s i) = O.text "BindNamed" <+> ppr i <+> O.text "@" O.<> ppr s
+  ppr (BindNamed i) = O.text "BindNamed" <+> ppr i
   ppr (BindLam s) = O.text "BindLam" <+> ppr s
+  
+instance Outputable BindGroups where
+  ppr (BindGroups {..}) = O.text "BindGroups" $+$ ppr _bg_arg_bnd_map $+$ ppr _bg_bnd_app_map
 
 instance Outputable (PtStore a) where
   ppr (PtStore {..}) = O.braces $

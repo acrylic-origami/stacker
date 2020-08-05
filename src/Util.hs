@@ -35,22 +35,22 @@ toNonEmpty _ (a:r) = a :| r
 toNonEmpty a _ = a :| []
 
 span2interval :: RealSrcSpan -> STInterval.Interval (Locd a)
-span2interval sp = seg2interval (sp, undefined)
+span2interval sp = seg2interval (Spand sp undefined)
 
-seg2interval :: Seg a -> STInterval.Interval (Locd a)
-seg2interval seg = 
-  let (l, h) = seg2intervalish seg
+seg2interval :: Spand a -> STInterval.Interval (Locd a)
+seg2interval sp = 
+  let (l, h) = seg2intervalish sp
   in STInterval.Interval STInterval.Open (STInterval.R l) (STInterval.R h) STInterval.Open
   
-seg2intervalish :: Seg a -> (Locd a, Locd a)
-seg2intervalish (sp, v) = ((Locd (realSrcSpanStart sp) v), (Locd (realSrcSpanEnd sp) v))
+seg2intervalish :: Spand a -> (Locd a, Locd a)
+seg2intervalish (Spand sp v) = ((Locd (realSrcSpanStart sp) v), (Locd (realSrcSpanEnd sp) v))
 
 map_loc_ivl f = catMaybes . map ((fmap f) . (\case { STInterval.R v -> Just v; otherwise -> Nothing }) . STInterval.low)
 ivl_payloads = map_loc_ivl l_payload
 ivl_locs = map_loc_ivl l_loc
 
 segfind :: Segs a -> Span -> [a]
-segfind (SegFlat l) sp = map snd $ filter ((`containsSpan` sp) . fst) l
+segfind (SegFlat l) sp = map s_payload $ filter ((`containsSpan` sp) . s_span) l
 segfind (SegTree t) sp = ivl_payloads $ STree.subintervalQuery t (span2interval sp)
 
 ident_span :: Identifier -> Maybe Span
@@ -78,8 +78,8 @@ ppr_nk :: DynFlags -> NodeKey a -> String
 ppr_nk dflags = O.showSDoc dflags . ppr_nk' where
   ppr_nk' (NKApp ag) = O.text "App @" O.<> (ppr $ s_span ag)
   ppr_nk' (NKBind (BindLam sp)) = O.text "Lam @" O.<> ppr sp
-  ppr_nk' (NKBind (BindNamed sp (Right n))) = O.text "BindNamed " O.<> O.quotes (ppr n) O.<> O.text "@" O.<> ppr sp
-  ppr_nk' (NKBind (BindNamed sp (Left m))) = O.text "Module " O.<> O.quotes (ppr m) O.<> O.text "@" O.<> ppr sp
+  ppr_nk' (NKBind (BindNamed (Right n))) = O.text "BindNamed " O.<> O.quotes (ppr n)
+  ppr_nk' (NKBind (BindNamed (Left m))) = O.text "Module " O.<> O.quotes (ppr m)
 
 generateShallowReferencesMap
   :: Foldable f
