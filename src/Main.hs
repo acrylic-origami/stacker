@@ -351,9 +351,9 @@ main = do
           -- bound'' :: STree.STree [STInterval.Interval (Locd ())] (Locd ())
           -- bound'' = STree.fromList $ concatMap (map (seg2intervalish . (bindkey_span &&& const ())) . M.elems . (^. ps_fns)) pts
           
-          bound' = concatMap (map seg2intervalish . map (uncurry Spand . (s_span &&& id)) . S.elems . (^. (ps_binds . bg_named_lookup))) pts
-          bound :: STree.STree [STInterval.Interval (Locd LIdentifier)] (Locd LIdentifier)
-          bound = STree.fromList bound'
+          bound_fns' = concatMap (map seg2intervalish . map (uncurry Spand . (s_span &&& id)) . S.elems . (^. (ps_binds . bg_named_lookup))) pts
+          bound_fns :: STree.STree [STInterval.Interval (Locd LIdentifier)] (Locd LIdentifier)
+          bound_fns = STree.fromList bound_fns'
           
           -- ident_str_lookup = M.fromList . mapMaybe (\case
           --     BindLam _ -> Nothing
@@ -363,8 +363,8 @@ main = do
           --         Right n -> (fromMaybe "" $ moduleNameString . moduleName <$> nameModule_maybe n, occNameString $ nameOccName n)
           --       )
           --   )
-          -- bound''' :: M.Map (String, String) [Span]
-          -- bound''' = M.unionsWith (<>) (
+          -- bound_fns''' :: M.Map (String, String) [Span]
+          -- bound_fns''' = M.unionsWith (<>) (
           --     -- map (M.map pure . ident_str_lookup . M.keys . (^. ps_binds)) pts -- i don't actually think that binds are referenced in the cost center stack trace
           --     -- ++
           --     map (
@@ -381,28 +381,36 @@ main = do
             in case l' of -- pass up entire subtree if we haven't found the module yet, otherwise constrain to single branch
               Just (First (cs_matched, t)) -> (Just cs_matched, Tr.Node css [t])
               Nothing -> (next, Tr.Node css (map snd l))
-          (targ, targ_t) = unzip $ mapMaybe (bisequence . second pure . Tr.foldTree targ_fold) loc_cs_forest
-          -- targ_segs' = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . second (const ()) . swap)) targ_t
-          targ_segs = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . uncurry Spand . swap)) targ_t
-          bks = map BindNamed $ ivl_payloads $ concatMap (STree.superintervalQuery bound . span2interval . snd) targ
+          (targs, targ_ts) = unzip $ mapMaybe (bisequence . second pure . Tr.foldTree targ_fold) loc_cs_forest
+          -- targ_segs' = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . second (const ()) . swap)) targ_ts
+          targ_segs = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . uncurry Spand . swap)) targ_ts
+          bks = 
+            (map (Left . BindNamed) $ ivl_payloads $ concatMap (STree.superintervalQuery bound_fns . span2interval . snd) targs)
+            <> ([
+                Right ident
+                | (_targn, targ_span) <- targs
+                , pt <- pts
+                , idents <- segfind (pt ^. ps_app_groups ^. ag_span_map) targ_span
+                , ident <- s_payload idents
+              ])
           grs = [
-              pt_search dflags pt targ_segs (Left bk)
+              pt_search dflags pt targ_segs bk
               | bk <- bks
               , pt <- pts
             ]
-      in flip const (targ, bound, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest)
+      in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest)
         pure ()
         -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
         -- putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
         -- ppr_ dflags bound'
-        -- putStrLn $ show $ [(b, sp, b == sp) | (_, sp) <- targ, b <- (bound''' M.! ("Main", "merge_decomps"))]
-        print $ concatMap (\(_, s) -> ivl_locs $ STree.superintervalQuery bound $ span2interval s) targ
+        -- putStrLn $ show $ [(b, sp, b == sp) | (_, sp) <- targs, b <- (bound''' M.! ("Main", "merge_decomps"))]
+        const (pure ()) $ print $ concatMap (\(_, s) -> ivl_locs $ STree.superintervalQuery bound_fns $ span2interval s) targs
         -- print bound''
         -- putStrLn $ ppr_safe dflags bound'
         print (length bks, map ((length . (_ag_ident_map . _ps_app_groups) &&& length . (^. (ps_binds . bg_bnd_app_map)))) pts)
-        putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_t
-        const (pure ()) $ ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
-        -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targ)
+        -- putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_ts
+        -- ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
+        -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targs)
         -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
         putStrLn $ unlines $ map (\(n, gr) ->
             unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ S.toList $ S.fromList $ Gr.edges gr
