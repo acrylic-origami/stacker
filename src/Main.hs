@@ -148,7 +148,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
             , next_store
             & ps_binds %~ (
                 (bg_arg_bnd_map %~ (
-                    flip (foldr (flip (M.insertWithKey (\n a b -> trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a)) fn_key)) (map s_payload $ unique fn_args)
+                    flip (foldr (flip (M.insertWithKey (\n a b -> trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a)) fn_key)) (filter is_var_name $ map s_payload $ unique fn_args)
                   ))
                 . (
                     case fn_key of 
@@ -176,6 +176,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                       else mk_pt_store' False (next_ast_stack, head $ nodeChildren ast)
                  bindees :: [LIdentifier]
                  (bindees, (next_names, next_store)) =
+                    first (filter (is_var_name . s_payload)) $
                     if is_this_bind
                       then (
                           map (uncurry (flip Spand)) $ concatMap (bisequence . (pure *** map fst)) $ M.toList $ generateReferencesMap $ take 1 $ nodeChildren ast

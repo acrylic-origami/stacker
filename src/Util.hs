@@ -20,6 +20,8 @@ import Lang
 import Outputable ( showSDoc, interppSP, Outputable(..), (<+>), ($+$) )
 import qualified Outputable as O
 import DynFlags ( DynFlags )
+import Name ( nameOccName, nameModule_maybe, Name(..) )
+import OccName ( occNameString )
 
 import qualified Data.Graph.Inductive as Gr
 
@@ -79,3 +81,7 @@ ppr_nk dflags = O.showSDoc dflags . ppr_nk' where
 
 getShallowReferences :: HieAST a -> [LIdentifier]
 getShallowReferences ast = map (Spand (nodeSpan ast)) $ M.keys $ nodeIdentifiers $ nodeInfo ast
+
+is_var_name :: Identifier -> Bool
+is_var_name (Left _) = True
+is_var_name (Right n) = uncurry (&&) $ (>='a') &&& (<='z') $ head $ occNameString $ nameOccName n
