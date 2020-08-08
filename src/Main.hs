@@ -25,7 +25,7 @@ import HieTypes
 import HieUtils
 import Text.Regex.TDFA
 import Text.Regex.Base.RegexLike ( AllTextSubmatches(..) )
-import Data.Monoid ( First(..) )
+import Data.Semigroup ( First(..) )
 import Data.Maybe ( catMaybes, fromMaybe, fromJust, mapMaybe, maybeToList, listToMaybe )
 import Data.List ( uncons, partition )
 import Data.Foldable ( foldrM, foldlM )
@@ -136,13 +136,13 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
   mk_pt_store' :: Bool -> ([HieAST TypeIndex], HieAST TypeIndex) -> ([AppGroup], PtStore TypeIndex)
   mk_pt_store' _ (ast_stack, ast)
     | has_node_constr fNS ast
-    , all (not . has_node_constr ["HsCase", "HsLamCase"]) ast_stack
-    = let ((fn_names, fn_args), grhss) = mconcat $ map arg_idents $ nodeChildren ast
-          next_ast_stack = (ast : ast_stack)
-          -- fn_names = (M.keys $ generateReferencesMap $ [head $ nodeChildren ast])
+    , Just (First True) <- mconcat $ map (\ast' -> if has_node_constr ["GRHS"] ast' then Just (First False) else if has_node_constr ["FunBind"] ast' then Just (First True) else Nothing) (ast:ast_stack)
+    , (((fn_name:_), fn_args), grhss@(_:_)) <- arg_idents ast
+    = let next_ast_stack = (ast : ast_stack)
+          -- fn_names = (M.keys $ generateReferencesMap $ [(\x -> if null x then error "1" else head x) $ nodeChildren ast])
           (next_names, next_store) = mconcat $ map (mk_pt_store' False . (next_ast_stack,)) grhss
-          fn_key = if has_node_constr ["HsLam"] ast then BindLam (nodeSpan ast) else BindNamed (head (if null fn_names then error (ppr_ast dflags ast) else fn_names))
-      in flip const (ast, dflags, (grhss), (fn_names, fn_args), next_store, fn_key)
+          fn_key = if has_node_constr ["HsLam"] ast then BindLam (nodeSpan ast) else BindNamed fn_name
+      in flip const (ast, dflags, (grhss), (fn_name, fn_args), next_store, fn_key)
         $ (
             [] -- clear accumulated names
             , next_store
@@ -371,9 +371,9 @@ main = do
           i_targ = read s_targ :: Int
           targ_fold css@(cs, _) l = 
             let next = if Prof.costCentreNo cs == i_targ then Just css else Nothing
-                l' = mconcat $ map (First . bisequence . second pure) l
-            in case getFirst l' of -- pass up entire subtree if we haven't found the module yet, otherwise constrain to single branch
-              Just (cs_matched, t) -> (Just cs_matched, Tr.Node css [t])
+                l' = mconcat $ map (fmap First . bisequence . second pure) l
+            in case l' of -- pass up entire subtree if we haven't found the module yet, otherwise constrain to single branch
+              Just (First (cs_matched, t)) -> (Just cs_matched, Tr.Node css [t])
               Nothing -> (next, Tr.Node css (map snd l))
           (targ, targ_t) = unzip $ mapMaybe (bisequence . second pure . Tr.foldTree targ_fold) loc_cs_forest
           -- targ_segs' = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . second (const ()) . swap)) targ_t
