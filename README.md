@@ -10,16 +10,16 @@ _Note: HIE files are a new feature of **GHC 8.8**._
 
 Try running stacker on itself!
 
-1. Build stacker first to produce HIE and prof files.
-1. Open `stacker.prof` and find a function call of interest.
-1. Grab the "Cost centre ID" (the fourth column, just after the source location)
-1. Run:
+1. `./run` to build the project in `target` which will be analyzed on the first cycle.
+1. Open `target/stacker-fake-pkg.prof` and find the cost centre ID for `main`.
+1. Grab the "Cost centre no." (the fourth column, just after the source location).
+1. Build and run stacker against the target with `./run <main-cost-centre-num> target/stacker-fake-pkg.prof target/hie`.
+1. Run stacker against itself subsequently by:
+   1. Opening `./stacker.prof` and finding the cost center # of a function call of interest;
+   1. Stashing the `.prof` file with `$ mv stacker.prof stacker.prof.bak`;
+   1. `./run <cost-centre-num> stacker.prof.bak hie vendor`
+   1. You should see a list of graph edges in the dependency graph.
 
-    ```bash
-    $ mv stacker.prof stacker.prof.bak
-    $ cabal run stacker -- <cost-center-id> stacker.prof.bak hie/
-    ```
-
-You should see a list of graph edges in the dependency graph.
+Generally, `run` accepts a cost center number, the `.prof` file and any number of directories with HIE files. Stacker built with `run` will generate HIE files for all its dependencies under `vendor/hie`.
 
 (2020-08-04) Tests + a usable shell/web UI are underway. The results and input process are changing shortly.
