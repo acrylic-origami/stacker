@@ -173,7 +173,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
           -> let (binder_ags, binder_store) =
                     if is_this_bind
                       then mk_pt_store' False (next_ast_stack, (!!1) $ nodeChildren ast)
-                      else mk_pt_store' False (next_ast_stack, head $ nodeChildren ast)
+                      else fromMaybe mempty $ mk_pt_store' False . (next_ast_stack,) <$> listToMaybe (nodeChildren ast) -- watching out for EmptyCase
                  bindees :: [LIdentifier]
                  (bindees, (next_names, next_store)) =
                     first (filter (is_var_name . s_payload)) $
@@ -182,7 +182,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                           map (uncurry (flip Spand)) $ concatMap (bisequence . (pure *** map fst)) $ M.toList $ generateReferencesMap $ take 1 $ nodeChildren ast
                           , mempty
                         )
-                      else (snd *** mconcat . map (mk_pt_store' False . (next_ast_stack,))) $ mconcat $ map arg_idents $ tail $ nodeChildren ast
+                      else (snd *** mconcat . map (mk_pt_store' False . (next_ast_stack,))) $ mconcat $ map arg_idents $ drop 1 $ nodeChildren ast
                  -- bindees = concatMap (uncurry (liftA2 (,)) . (pure *** map fst)) $ M.toList bindee_identmap -- [(Span, Identifier)]
                  binder_store' = binder_store & (ps_binds %~ mappend BindGroups {
                     _bg_named_lookup = S.fromList bindees,
