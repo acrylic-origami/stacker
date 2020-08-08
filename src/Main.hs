@@ -77,7 +77,8 @@ getHieFilesIn path = do
     isDir <- doesDirectoryExist path
     if isFile && ("hie" `isExtensionOf` path) then do
       path' <- canonicalizePath path
-      return [path']
+      fsize <- getFileSize path'
+      if fsize == 0 then mempty else return [path']
     else if isDir then do
       cnts <- listDirectory path
       withCurrentDirectory path $ foldMap getHieFilesIn cnts
