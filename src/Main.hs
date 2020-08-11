@@ -5,6 +5,7 @@ import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap as IM
 import qualified Data.Text as T
+import qualified Data.ByteString.UTF8 as UB
 import Text.Read ( readMaybe )
 import qualified Data.Text.IO as TIO
 import qualified GHC.Prof as Prof
@@ -16,7 +17,7 @@ import Data.Bitraversable ( bisequence )
 import Data.Bifunctor ( bimap )
 import Data.Foldable ( fold, asum )
 import qualified Data.Tree as Tr
-import FastString ( FastString(..), fsLit )
+import FastString ( FastString(..), fsLit, unpackFS )
 import NameCache ( NameCache(..), initNameCache )
 import Data.Text.IO ( readFile )
 import System.Environment ( getArgs )
@@ -27,7 +28,7 @@ import Text.Regex.TDFA
 import Text.Regex.Base.RegexLike ( AllTextSubmatches(..) )
 import Data.Semigroup ( First(..) )
 import Data.Maybe ( catMaybes, fromMaybe, fromJust, mapMaybe, maybeToList, listToMaybe )
-import Data.List ( uncons, partition )
+import Data.List ( uncons, partition, intersperse )
 import Data.Foldable ( foldrM, foldlM )
 import Control.Arrow ( (***), (&&&), first, second )
 import Data.Semigroup ( Last(..) )
@@ -347,6 +348,7 @@ main = do
               . (bisequence . (pure &&& cs_span) *** concat)
             ) cs_tree -- (SrcSpan, Profile)
           pts = map (mk_pt_store dflags) (concatMap (M.elems . getAsts . hie_asts) hies)
+          lined_srcs = M.fromList $ map (hie_hs_file &&& lines . UB.toString . hie_hs_src) hies
           -- note: also able to map directly to Binds and BindKeys as well, since the PtStore map type right-hands can be coalesced to NodeKeys
           -- bound'' :: STree.STree [STInterval.Interval (Locd ())] (Locd ())
           -- bound'' = STree.fromList $ concatMap (map (seg2intervalish . (bindkey_span &&& const ())) . M.elems . (^. ps_fns)) pts
@@ -398,7 +400,7 @@ main = do
               | bk <- bks
               , pt <- pts
             ]
-      in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest)
+      in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest) -- const (putStrLn $ unlines $ head $ M.elems $ lined_srcs) 
         pure ()
         -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
         -- putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
@@ -412,9 +414,29 @@ main = do
         -- ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
         -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targs)
         -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
-        putStrLn $ unlines $ map (\(n, gr) ->
+        const (pure ()) $ putStrLn $ unlines $ map (\(n, gr) ->
             unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ S.toList $ S.fromList $ Gr.edges gr
           ) grs
+        putStrLn $ unlines $ map (ppr_safe dflags . fst) $ grs
+        putStrLn $ unlines $ map (\(ns, gr) -> unlines $ map (
+            unlines . Tr.foldTree (
+                curry $ uncurry (:) . (
+                    fromMaybe "<N>"
+                    . (
+                        fmap (uncurry (<>) . (
+                            (<>" ") . nk_ctor . fst
+                            &&& concat . intersperse "; " . map (dropWhile (==' ')) . uncurry snip_src . first nk_src)
+                          )
+                        . ((bisequence . (
+                            Just
+                            &&& (lined_srcs M.!?) . unpackFS . srcSpanFile . nk_src
+                          )) . Gr.lab')
+                        =<<
+                      ) . fst . flip Gr.match gr
+                    *** concat . map (map (' ':))
+                  )
+              )
+          ) $ Gr.dff ns gr) grs
         {- $ map (\case -- gr_prettify (ppr_safe dflags) id
             (Just node, gr) -> gr_prettify (ppr_safe dflags) id gr
             (Nothing, _) -> mempty

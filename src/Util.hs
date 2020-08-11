@@ -85,3 +85,34 @@ getShallowReferences ast = map (Spand (nodeSpan ast)) $ M.keys $ nodeIdentifiers
 is_var_name :: Identifier -> Bool
 is_var_name (Left _) = True
 is_var_name (Right n) = uncurry (&&) $ (>='a') &&& (<='z') $ head $ occNameString $ nameOccName n
+
+nk_src :: NodeKey a -> Span
+nk_src (NKApp ag) = s_span ag
+nk_src (NKBind (BindNamed lident)) = s_span lident
+nk_src (NKBind (BindLam sp)) = sp
+
+nk_ctor :: NodeKey a -> String
+nk_ctor (NKBind _) = "NKBind"
+nk_ctor (NKApp _) = "NKApp"
+
+maphead :: (a -> a) -> [a] -> [a]
+maphead _ [] = []
+maphead f (a:l) = (f a):l
+
+maplast :: (a -> a) -> [a] -> [a]
+maplast _ [] = []
+maplast f (a:[]) = (f a):[]
+maplast f (a:l) = a:(maplast f l)
+
+snip_src :: Span -> [String] -> [String]
+snip_src sp ls =
+  let (l, r) = (realSrcSpanStart sp, realSrcSpanEnd sp)
+  in maplast (take (if srcLocLine l == srcLocLine r then (srcLocCol r - srcLocCol l) else srcLocCol r)) $ take (srcLocLine r - srcLocLine l + 1) $
+     maphead (drop (srcLocCol l - 1)) $ drop (srcLocLine l - 1) ls
+
+splitOn :: Eq a => a -> [a] -> [[a]]
+splitOn = fmap (uncurry (:)) . splitOn' where
+  splitOn' _ [] = mempty
+  splitOn' a (b:l) =
+    let (n, c) = splitOn' a l
+    in if a == b then (mempty, n:c) else (b:n, c)

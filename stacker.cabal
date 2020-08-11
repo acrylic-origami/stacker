@@ -20,7 +20,6 @@ executable stacker
   main-is:             Main.hs
   other-modules:       Data.SegmentTree, Data.SegmentTree.Interval, Data.SegmentTree.Measured, Lang, Util
   -- other-extensions:
-  build-depends:       base, ghc, ghc-prof, text, containers, regex-tdfa, regex-base, directory, filepath, ghc-paths, lens, mtl, fgl, bimap
-  ghc-options:         -prof -fprof-auto -rtsopts -with-rtsopts=-p -O0 -fwrite-ide-info -hiedir hie -fexternal-interpreter
+  build-depends:       base >= 4.13 && <4.15, ghc, ghc-prof, text, containers, regex-tdfa, regex-base, directory, filepath, ghc-paths, lens, mtl, fgl, bimap, bytestring, utf8-string
   hs-source-dirs:      src
   default-language:    Haskell2010
