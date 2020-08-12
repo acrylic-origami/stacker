@@ -45,10 +45,10 @@ data Spand a = Spand {
   s_payload :: a
 } deriving Show
 
-instance Eq (Spand a) where
-  (Spand l _) == (Spand r _) = l == r
-instance Ord (Spand a) where
-  (Spand l _) `compare` (Spand r _) = l `compare` r
+instance Eq a => Eq (Spand a) where
+  (Spand _ l) == (Spand _ r) = l == r
+instance Ord a => Ord (Spand a) where
+  (Spand _ l) `compare` (Spand _ r) = l `compare` r
   
 type LIdentifier = Spand Identifier
   
@@ -63,7 +63,7 @@ instance Monoid (Segs a) where
 type AppGroup = Spand [LIdentifier]
 
 data AppGroups a = AppGroups {
-  _ag_ident_map :: M.Map Identifier [AppGroup], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
+  _ag_ident_map :: M.Map LIdentifier [AppGroup], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
   _ag_span_map :: Segs AppGroup
 } -- NOTE! AppGroups are used to find instances of _usages_ of _bindings_ after tracing an ident to an _argument_ only. NOT for idents -> other idents. Instead trace those to their binding sites, then to their RHS closed dependencies
 makeLenses ''AppGroups
@@ -72,16 +72,16 @@ data BindKey = BindNamed LIdentifier | BindLam Span deriving (Eq, Ord)
 
 type IdentMap a = M.Map LIdentifier [(Span, IdentifierDetails a)]
 data BindGroups = BindGroups {
-  _bg_arg_bnd_map :: M.Map Identifier BindKey,
-  _bg_bnd_app_map :: M.Map Identifier [AppGroup],
-  _bg_named_lookup :: S.Set LIdentifier -- find BindNamed
+  _bg_arg_bnd_map :: M.Map LIdentifier BindKey,
+  _bg_bnd_app_map :: M.Map LIdentifier [AppGroup]
+  -- _bg_named_lookup :: S.Set LIdentifier -- find BindNamed
 }
 makeLenses ''BindGroups
 
 instance Semigroup BindGroups where
-  (BindGroups la lb lc) <> (BindGroups ra rb rc) = BindGroups (la <> ra) (M.unionWith (<>) lb rb) (lc <> rc)
+  (BindGroups la lb) <> (BindGroups ra rb) = BindGroups (la <> ra) (M.unionWith (<>) lb rb)
 instance Monoid BindGroups where
-  mempty = BindGroups mempty mempty mempty
+  mempty = BindGroups mempty mempty
 
 data PtStore a = PtStore {
   _ps_app_groups :: AppGroups a, -- app groups: maps of spans and identifiers to disjoint sets of app groups

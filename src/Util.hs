@@ -116,3 +116,8 @@ splitOn = fmap (uncurry (:)) . splitOn' where
   splitOn' a (b:l) =
     let (n, c) = splitOn' a l
     in if a == b then (mempty, n:c) else (b:n, c)
+
+(!?~) :: Ord k => M.Map k a -> k -> Maybe (k, a)
+m !?~ k | Just t@(k', a) <- M.lookupLE k m
+        = if k' == k then Just t else Nothing
+        | otherwise = Nothing
