@@ -1,8 +1,9 @@
-{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances, DerivingStrategies #-}
-module Lang where
+{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, DeriveGeneric, FlexibleInstancesm, MultiParamTypeClasses #-}
+module Stacker.Lang where
 
 import Control.Lens ( makeLenses )
 import Control.Lens.Operators
+import GHC.Generics
 
 import Control.Arrow ( (***), (&&&), first, second )
 import qualified Data.Set as S
@@ -23,7 +24,10 @@ import qualified Data.SegmentTree as STree
 import Data.SegmentTree.Measured
 import Data.SegmentTree.Interval ( Interval(..) )
 
-import Data.Graph.Inductive
+import qualified Data.Graph.Inductive as Gr
+
+import Data.Aeson ( FromJSON(..), ToJSON(..) )
+import qualified Data.Aeson as Aeson
 
 import Outputable ( Outputable(..), (<+>), ($+$) )
 import qualified Outputable as O
@@ -91,6 +95,11 @@ data PtStore a = PtStore {
 makeLenses ''PtStore
 
 data NodeKey a = NKApp AppGroup | NKBind BindKey deriving (Eq, Ord)
+
+nk_span :: NodeKey a -> Span
+nk_span (NKApp ag) = s_span ag
+nk_span (NKBind (BindNamed lident)) = s_span lident
+nk_span (NKBind (BindLam sp)) = sp
 -- type NodeStore a = BM.Bimap (NodeKey a) Node
 
 -- data NodeStore a = NodeStore {
@@ -147,3 +156,43 @@ instance Outputable (PtStore a) where
 instance Outputable (NodeKey a) where
   ppr (NKApp a) = O.text "NKApp" <+> ppr a
   ppr (NKBind b) = O.text "NKBind" <+> ppr b
+
+--------------------------------------------------
+
+-- OUTPUT INTERFACE --
+
+type AdjList k a b = M.Map k (a, [(k, b)]) -- [(k, (a, [(k, b)]))]
+type NodeKeyCtor = String
+type HollowLoc = (Int, Int)
+type HollowSpan = (HollowLoc, HollowLoc)
+type HollowKey = (Int, Gr.Node) -- hacks to support multiple graphs without having to reindex all the nodes
+data JSGraph = JSGraph {
+  jsg_gr :: AdjList HollowKey (NodeKeyCtor, HollowSpan) HollowSpan
+  , jsg_sccs :: [[HollowKey]]
+} deriving Generic
+data HollowGrState = HollowGrState {
+  st_at :: [HollowKey]
+  , st_gr :: JSGraph
+} deriving Generic
+
+gr2adjlist :: Ord k => (Gr.Node -> k) -> Gr.Gr a b -> AdjList k a b
+gr2adjlist k gr = M.fromList $ map ((k &&& (Gr.lab' &&& map (first k) . Gr.lsuc') . Gr.context gr)) (Gr.nodes gr)
+
+hollow_loc = srcLocLine &&& srcLocCol
+hollow_span = (hollow_loc . realSrcSpanStart &&& hollow_loc . realSrcSpanEnd)
+
+nk_ctor :: NodeKey a -> NodeKeyCtor
+nk_ctor (NKBind _) = "NKBind"
+nk_ctor (NKApp _) = "NKApp"
+
+instance Semigroup JSGraph where
+  (JSGraph la lb) <> (JSGraph ra rb) = JSGraph (la <> ra) (lb <> rb)
+  
+instance Monoid JSGraph where
+  mempty = JSGraph mempty mempty
+  
+instance ToJSON JSGraph where
+  toEncoding = Aeson.genericToEncoding Aeson.defaultOptions
+  
+instance ToJSON HollowGrState where
+  toEncoding = Aeson.genericToEncoding Aeson.defaultOptions

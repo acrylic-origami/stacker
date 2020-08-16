@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, DeriveGeneric #-}
 module Main where
 
 import qualified Data.Set as S
@@ -6,26 +6,26 @@ import qualified Data.Map.Strict as M
 import qualified Data.IntMap as IM
 import qualified Data.Text as T
 import qualified Data.ByteString.UTF8 as UB
-import Text.Read ( readMaybe )
+import qualified Data.ByteString.Lazy.UTF8 as UBL
 import qualified Data.Text.IO as TIO
-import qualified GHC.Prof as Prof
+
+-- GHC
 import SrcLoc ( SrcLoc(..), SrcSpan, RealSrcSpan(..), mkSrcLoc, mkSrcSpan, containsSpan, mkRealSrcSpan, mkRealSrcLoc, realSrcSpanStart, realSrcSpanEnd )
 import Name ( nameOccName, nameModule_maybe, Name(..) )
 import GHC ( moduleNameString, moduleName, ModuleName(..) )
 import OccName ( occNameString )
+import FastString ( FastString(..), fsLit, unpackFS )
+import Data.Text.IO ( readFile )
+import Text.Read ( readMaybe )
+import SysTools ( initSysTools )
+import DynFlags ( DynFlags, defaultDynFlags )
+import GHC.Paths (libdir)
+
+-- data/control
 import Data.Bitraversable ( bisequence )
 import Data.Bifunctor ( bimap )
 import Data.Foldable ( fold, asum )
 import qualified Data.Tree as Tr
-import FastString ( FastString(..), fsLit, unpackFS )
-import NameCache ( NameCache(..), initNameCache )
-import Data.Text.IO ( readFile )
-import System.Environment ( getArgs )
-import HieBin
-import HieTypes
-import HieUtils
-import Text.Regex.TDFA
-import Text.Regex.Base.RegexLike ( AllTextSubmatches(..) )
 import Data.Semigroup ( First(..) )
 import Data.Maybe ( catMaybes, fromMaybe, fromJust, mapMaybe, maybeToList, listToMaybe )
 import Data.List ( uncons, partition, intersperse )
@@ -33,12 +33,26 @@ import Data.Foldable ( foldrM, foldlM )
 import Control.Arrow ( (***), (&&&), first, second )
 import Data.Semigroup ( Last(..) )
 import Control.Applicative ( liftA2 )
-import UniqSupply ( mkSplitUniqSupply )
 import Control.Lens ( makeLenses )
 import Control.Monad.State ( MonadState(..), State(..), StateT(..), evalState, mapState )
 import qualified Control.Lens as L
 import Control.Lens.Operators
 
+-- prof & HIE
+import qualified GHC.Prof as Prof
+import HieBin
+import HieTypes
+import HieUtils
+
+-- regex
+import Text.Regex.TDFA
+import Text.Regex.Base.RegexLike ( AllTextSubmatches(..) )
+
+-- aeson
+import Data.Aeson ( FromJSON(..), ToJSON(..) )
+import qualified Data.Aeson as Aeson
+
+-- data structures
 import qualified Data.SegmentTree as STree
 import qualified Data.SegmentTree.Interval as STInterval
 import Data.SegmentTree.Measured
@@ -46,27 +60,17 @@ import Data.SegmentTree.Measured
 import qualified Data.Graph.Inductive as Gr
 import Data.Graph.Inductive.PatriciaTree ( Gr(..) )
 
+-- system
 import System.Directory
 import System.FilePath
+import System.Environment ( getArgs )
 
-import SysTools ( initSysTools )
-import DynFlags ( DynFlags, defaultDynFlags )
-import GHC.Paths (libdir)
+-- local
+import Stacker.Lang
+import Stacker.Util
 
-import Lang
-import Util
-
+-- debug
 import Debug.Trace ( trace, traceShow )
-
-dynFlagsForPrinting :: IO DynFlags
-dynFlagsForPrinting = do
-  systemSettings <- initSysTools libdir
-  return $ defaultDynFlags systemSettings ([], [])
-  
-makeNc :: IO NameCache
-makeNc = do
-  uniq_supply <- mkSplitUniqSupply 'z'
-  return $ initNameCache uniq_supply []
 
 -- NOTE: `getHieFilesIn` originates from HieDb - see ./LICENSE_hiedb
 -- | Recursively search for .hie files in given directory
@@ -222,7 +226,8 @@ xselfmap :: (a -> a -> b) -> [a] -> [b]
 xselfmap f (a:l) = (map (f a) l) <> xselfmap f l
 xselfmap _ _ = []
 
-type NodeGr a = Gr (NodeKey a) (LIdentifier)
+type HollowNodeGr = Gr (NodeKeyCtor, Span) Span
+type NodeGr a = Gr (NodeKey a) LIdentifier
 type NodeState a = State (S.Set AppGroup) ([Gr.Node], [Gr.LEdge LIdentifier])
 
 pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey LIdentifier -> ([Gr.Node], NodeGr a)
@@ -365,25 +370,6 @@ main = do
           bound_fns :: STree.STree [STInterval.Interval (Locd LIdentifier)] (Locd LIdentifier)
           bound_fns = STree.fromList bound_fns'
           
-          -- ident_str_lookup = M.fromList . mapMaybe (\case
-          --     BindLam _ -> Nothing
-          --     BindNamed i -> Just $ (
-          --       case i of 
-          --         Left mn -> (moduleNameString mn, "")
-          --         Right n -> (fromMaybe "" $ moduleNameString . moduleName <$> nameModule_maybe n, occNameString $ nameOccName n)
-          --       )
-          --   )
-          -- bound_fns''' :: M.Map (String, String) [Span]
-          -- bound_fns''' = M.unionsWith (<>) (
-          --     -- map (M.map pure . ident_str_lookup . M.keys . (^. ps_binds)) pts -- i don't actually think that binds are referenced in the cost center stack trace
-          --     -- ++
-          --     map (
-          --         M.map pure
-          --         . ident_str_lookup
-          --         . M.keys
-          --         . (^. (ps_binds . bg_bnd_app_map))
-          --       ) pts
-          --   )
           i_targ = read s_targ :: Int
           targ_fold css@(cs, _) l = 
             let next = if Prof.costCentreNo cs == i_targ then Just css else Nothing
@@ -408,45 +394,48 @@ main = do
               | bk <- bks
               , pt <- pts
             ]
+          hollow_state = uncurry HollowGrState $ mconcat
+            $ zipWith (\k gr -> (map (k,) *** (uncurry JSGraph . (gr2adjlist (k,) &&& map (map (k,)) . Gr.scc) . Gr.emap (hollow_span . s_span) . Gr.nmap (nk_ctor &&& hollow_span . nk_span))) gr) [0..] grs
       in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest) -- const (putStrLn $ unlines $ head $ M.elems $ lined_srcs) 
-        pure ()
-        -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
-        -- putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
-        -- ppr_ dflags bound'
-        -- putStrLn $ show $ [(b, sp, b == sp) | (_, sp) <- targs, b <- (bound''' M.! ("Main", "merge_decomps"))]
-        const (pure ()) $ print $ concatMap (\(_, s) -> ivl_locs $ STree.superintervalQuery bound_fns $ span2interval s) targs
-        -- print bound''
-        -- putStrLn $ ppr_safe dflags bound'
-        print (length bks, map ((length . (_ag_ident_map . _ps_app_groups) &&& length . (^. (ps_binds . bg_bnd_app_map)))) pts)
-        -- putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_ts
-        -- ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
-        -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targs)
-        -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
-        const (pure ()) $ putStrLn $ unlines $ map (\(n, gr) ->
-            unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ S.toList $ S.fromList $ Gr.edges gr
-          ) grs
-        putStrLn $ unlines $ map (ppr_safe dflags . fst) $ grs
-        putStrLn $ unlines $ map (\(ns, gr) -> unlines $ map (
-            unlines . Tr.foldTree (
-                curry $ uncurry (:) . (
-                    fromMaybe "<N>"
-                    . (
-                        fmap (uncurry (<>) . (
-                            (<>" ") . nk_ctor . fst
-                            &&& concat . intersperse "; " . map (dropWhile (==' ')) . uncurry snip_src . first nk_src)
-                          )
-                        . ((bisequence . (
-                            Just
-                            &&& (lined_srcs M.!?) . unpackFS . srcSpanFile . nk_src
-                          )) . Gr.lab')
-                        =<<
-                      ) . fst . flip Gr.match gr
-                    *** concat . map (map (' ':))
-                  )
-              )
-          ) $ Gr.dff ns gr) grs
-        {- $ map (\case -- gr_prettify (ppr_safe dflags) id
-            (Just node, gr) -> gr_prettify (ppr_safe dflags) id gr
-            (Nothing, _) -> mempty
-          ) grs -}
-        
+        writeFile "static/gr.json" (UBL.toString $ Aeson.encode hollow_state)
+        const (pure ()) $ do
+          -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
+          -- putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
+          -- ppr_ dflags bound'
+          -- putStrLn $ show $ [(b, sp, b == sp) | (_, sp) <- targs, b <- (bound''' M.! ("Main", "merge_decomps"))]
+          const (pure ()) $ print $ concatMap (\(_, s) -> ivl_locs $ STree.superintervalQuery bound_fns $ span2interval s) targs
+          -- print bound''
+          -- putStrLn $ ppr_safe dflags bound'
+          print (length bks, map ((length . (_ag_ident_map . _ps_app_groups) &&& length . (^. (ps_binds . bg_bnd_app_map)))) pts)
+          -- putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_ts
+          -- ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
+          -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targs)
+          -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
+          const (pure ()) $ putStrLn $ unlines $ map (\(n, gr) ->
+              unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ unique $ Gr.edges gr
+            ) grs
+          putStrLn $ unlines $ map (ppr_safe dflags . fst) $ grs
+          putStrLn $ unlines $ map (\(ns, gr) -> unlines $ map (
+              unlines . Tr.foldTree (
+                  curry $ uncurry (:) . (
+                      fromMaybe "<N>"
+                      . (
+                          fmap (uncurry (<>) . (
+                              (<>" ") . nk_ctor . fst
+                              &&& concat . intersperse "; " . map (dropWhile (==' ')) . uncurry snip_src . first nk_span)
+                            )
+                          . ((bisequence . (
+                              Just
+                              &&& (lined_srcs M.!?) . unpackFS . srcSpanFile . nk_span
+                            )) . Gr.lab')
+                          =<<
+                        ) . fst . flip Gr.match gr
+                      *** concatMap (map (' ':))
+                    )
+                )
+            ) $ Gr.dff ns gr) grs
+          {- $ map (\case -- gr_prettify (ppr_safe dflags) id
+              (Just node, gr) -> gr_prettify (ppr_safe dflags) id gr
+              (Nothing, _) -> mempty
+            ) grs -}
+          

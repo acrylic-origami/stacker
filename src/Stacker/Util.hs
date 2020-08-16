@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase, TupleSections #-}
-module Util where
+module Stacker.Util where
 
 import Control.Arrow ( (***), (&&&), first, second )
 import SrcLoc
@@ -15,7 +15,8 @@ import Data.List.NonEmpty ( NonEmpty(..) )
 import Data.List ( intersect )
 import Data.Maybe ( catMaybes )
 import HieTypes
-import Lang
+
+import Stacker.Lang
 
 import Outputable ( showSDoc, interppSP, Outputable(..), (<+>), ($+$) )
 import qualified Outputable as O
@@ -27,6 +28,25 @@ import qualified Data.Graph.Inductive as Gr
 
 import Debug.Trace ( trace, traceShow )
 
+import SysTools ( initSysTools )
+import DynFlags ( DynFlags, defaultDynFlags )
+import GHC.Paths (libdir)
+import NameCache ( NameCache(..), initNameCache )
+import UniqSupply ( mkSplitUniqSupply )
+
+dynFlagsForPrinting :: IO DynFlags
+dynFlagsForPrinting = do
+  systemSettings <- initSysTools libdir
+  return $ defaultDynFlags systemSettings ([], [])
+  
+makeNc :: IO NameCache
+makeNc = do
+  uniq_supply <- mkSplitUniqSupply 'z'
+  return $ initNameCache uniq_supply []
+  
+both :: (a -> b) -> ((a, a) -> (b, b))
+swap :: (a, b) -> (b, a)
+dupe :: a -> (a, a)
 both f = (f *** f)
 swap (a, b) = (b, a)
 dupe a = (a, a)
@@ -85,15 +105,6 @@ getShallowReferences ast = map (Spand (nodeSpan ast)) $ M.keys $ nodeIdentifiers
 is_var_name :: Identifier -> Bool
 is_var_name (Left _) = True
 is_var_name (Right n) = uncurry (&&) $ (>='a') &&& (<='z') $ head $ occNameString $ nameOccName n
-
-nk_src :: NodeKey a -> Span
-nk_src (NKApp ag) = s_span ag
-nk_src (NKBind (BindNamed lident)) = s_span lident
-nk_src (NKBind (BindLam sp)) = sp
-
-nk_ctor :: NodeKey a -> String
-nk_ctor (NKBind _) = "NKBind"
-nk_ctor (NKApp _) = "NKApp"
 
 maphead :: (a -> a) -> [a] -> [a]
 maphead _ [] = []

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+HIE_OPTS="-fwrite-ide-info"
+RTS_OPTS="-p"
+CC_OPTS="-fprof-auto -rtsopts -O1 -with-rtsopts=$RTS_OPTS -fexternal-interpreter"
+stack build stacker-fake-pkg --ghc-options="$HIE_OPTS -hiedir target/hie" --profile
+stack exec stacker-fake-pkg 2>&1 1>/dev/null
+if [[ $# -gt 0 ]]; then
+	stack build stacker --ghc-options="$HIE_OPTS -hiedir hie"
+	stack exec stacker-exe "$@"
+fi

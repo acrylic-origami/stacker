@@ -1,0 +1,64 @@
+name:                stacker
+version:             0.1.0.0
+github:              "acrylic-origami/stacker"
+license:             BSD3
+author:              "Derek Lam"
+maintainer:          "derek@lam.io"
+copyright:           "2020 Derek Lam"
+
+extra-source-files:
+- README.md
+- CHANGELOG.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/acrylic-origami/stacker#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- ghc
+- ghc-prof
+- text
+- containers
+- regex-tdfa
+- regex-base
+- directory
+- filepath
+- ghc-paths
+- lens
+- mtl
+- fgl
+- bimap
+- bytestring
+- utf8-string
+- aeson
+
+library:
+  source-dirs: src
+
+executables:
+  stacker-exe:
+    main:                Engine.hs
+    source-dirs:         app/engine
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - stacker
+    
+  stacker-server:
+    main:                Server.hs
+    source-dirs:         app/server
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - stacker
+    - happstack-server
