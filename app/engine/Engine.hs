@@ -226,10 +226,6 @@ xselfmap :: (a -> a -> b) -> [a] -> [b]
 xselfmap f (a:l) = (map (f a) l) <> xselfmap f l
 xselfmap _ _ = []
 
-type HollowNodeGr = Gr (NodeKeyCtor, Span) Span
-type NodeGr a = Gr (NodeKey a) LIdentifier
-type NodeState a = State (S.Set AppGroup) ([Gr.Node], [Gr.LEdge LIdentifier])
-
 pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey LIdentifier -> ([Gr.Node], NodeGr a)
 pt_search dflags (PtStore {..}) cs_segs = 
   let state_step :: [NodeKey a] -> (M.Map (NodeKey a) Gr.Node, Gr.Node) -> (M.Map (NodeKey a) Gr.Node, Gr.Node)
@@ -271,21 +267,21 @@ pt_search dflags (PtStore {..}) cs_segs =
       pt_search' m_ident =
         let (node_sucs, within_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
               Left bk ->
-                let (edge_ags, within_cs) = case bk of
+                let (ags, within_cs) = case bk of
                       BindNamed fn_ident -> (
-                          (maybeToList $ (_ps_app_groups ^. ag_ident_map) !?~ fn_ident)
-                          <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) !?~ fn_ident)
+                          concat
+                          $ (maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? fn_ident)
+                          <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident)
                           , ident_in_cs fn_ident
                         )
                       BindLam fn_span -> (
-                          map ((Spand fn_span undefined,) . pure) (segfind (_ps_app_groups ^. ag_span_map) fn_span)
+                          segfind (_ps_app_groups ^. ag_span_map) fn_span
                           , not $ null $ segfind cs_segs fn_span
                         )
                 in (
                     [
-                      ((node, edge), with_ag (pt_search' . Right) ag)
-                      | (edge, ags) <- edge_ags
-                      , ag <- ags
+                      ((node, BindEdge $ bk_span bk), with_ag (pt_search' . Right) ag)
+                      | ag <- ags
                       , node <- maybeToList $ nodes M.!? (NKApp ag)
                     ]
                       -- $ M.toList $ M.restrictKeys nodes (S.fromList $ map NKApp )
@@ -296,7 +292,7 @@ pt_search dflags (PtStore {..}) cs_segs =
                      | Just (bnd, ags) <- (_ps_binds ^. bg_bnd_app_map) !?~ ident
                      -> (
                         mapMaybe (bisequence . (
-                            fmap (,bnd) . (nodes M.!?) . NKApp
+                            fmap (,AppEdge ident bnd) . (nodes M.!?) . NKApp
                             &&& Just . with_ag (pt_search' . Right)
                           )) ags
                       )
@@ -304,7 +300,7 @@ pt_search dflags (PtStore {..}) cs_segs =
                      -- , Nothing <- (nodes !? (NKApp ag)) >>= (flip match gr) -- crap, can't build the graph from the bottom up because I need to anti-cycle, so children will have to do the matching
                      -> (
                         maybeToList $ bisequence (
-                            fmap (,arg) $ nodes M.!? (NKBind bk),
+                            fmap (,ArgEdge ident arg) $ nodes M.!? (NKBind bk),
                             Just $ pt_search' (Left bk)
                           )
                       )
@@ -394,8 +390,13 @@ main = do
               | bk <- bks
               , pt <- pts
             ]
-          hollow_state = uncurry HollowGrState $ mconcat
-            $ zipWith (\k gr -> (map (k,) *** (uncurry JSGraph . (gr2adjlist (k,) &&& map (map (k,)) . Gr.scc) . Gr.emap (hollow_span . s_span) . Gr.nmap (nk_ctor &&& hollow_span . nk_span))) gr) [0..] grs
+          hollow_state = mconcat $ map (uncurry HollowGrState . second (IM.filter (not . null . snd) . gr2adjlist)) grs
+              -- for now, don't optimize the filenames out yet
+              -- . Gr.emap (fmap (hollow_span srcfilemap . s_span))
+              -- . Gr.nmap (nk_ctor &&& hollow_span srcfilemap . nk_span)
+              -- 
+              -- srcfilelist = unique $ concatMap (map (unpackFS . srcSpanFile) . uncurry (<>) . (map nk_span . Gr.labNodes &&& map s_span . Gr.labEdges)) grs -- collect all SrcSpan files and map them
+              -- srcfilemap = M.fromList $ zip srcfilelist [0..]
       in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest) -- const (putStrLn $ unlines $ head $ M.elems $ lined_srcs) 
         writeFile "static/gr.json" (UBL.toString $ Aeson.encode hollow_state)
         const (pure ()) $ do

@@ -1,16 +1,24 @@
-{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, DeriveGeneric, FlexibleInstancesm, MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses #-}
 module Stacker.Lang where
 
 import Control.Lens ( makeLenses )
-import Control.Lens.Operators
+import qualified Control.Lens.Operators as LOp
 import GHC.Generics
+import qualified FastString as FS
+import qualified Data.Text.Encoding as E
+import qualified Data.Text as T
+import qualified Data.ByteString.Lazy as LBS
 
 import Control.Arrow ( (***), (&&&), first, second )
 import qualified Data.Set as S
+import Data.List.NonEmpty ( NonEmpty(..) )
+import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Bimap as BM
 import qualified Data.Tree as Tr
 import Data.List ( intersect )
+import Control.Monad.State ( State(..) )
 
 import qualified GHC.Prof as Prof
 
@@ -26,8 +34,9 @@ import Data.SegmentTree.Interval ( Interval(..) )
 
 import qualified Data.Graph.Inductive as Gr
 
-import Data.Aeson ( FromJSON(..), ToJSON(..) )
+import Data.Aeson ( FromJSON(..), ToJSON(..), ToJSONKey(..), (.=) )
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson.Types
 
 import Outputable ( Outputable(..), (<+>), ($+$) )
 import qualified Outputable as O
@@ -35,7 +44,7 @@ import qualified Outputable as O
 data Locd a = Locd {
   l_loc :: RealSrcLoc,
   l_payload :: a
-} deriving Show
+} deriving (Show)
 
 instance Eq (Locd a) where
   (Locd l _) == (Locd r _) = l == r
@@ -73,6 +82,8 @@ data AppGroups a = AppGroups {
 makeLenses ''AppGroups
 
 data BindKey = BindNamed LIdentifier | BindLam Span deriving (Eq, Ord)
+bk_span (BindLam sp) = sp
+bk_span (BindNamed b) = s_span b
 
 type IdentMap a = M.Map LIdentifier [(Span, IdentifierDetails a)]
 data BindGroups = BindGroups {
@@ -159,40 +170,90 @@ instance Outputable (NodeKey a) where
 
 --------------------------------------------------
 
+data EdgeLabel =
+  ArgEdge LIdentifier LIdentifier -- loc of source, loc of target argument
+  | AppEdge LIdentifier LIdentifier -- loc of source, loc of target binding
+  | BindEdge Span -- just the bindee location itself
+  -- the name location that links the nodes together (e.g. a symbol within an AppGroup + its binding, the arg )
+type NodeGr a = Gr.Gr ((NodeKey a)) EdgeLabel
+type NodeState a = State (S.Set AppGroup) ([Gr.Node], [Gr.LEdge EdgeLabel])
+
 -- OUTPUT INTERFACE --
 
-type AdjList k a b = M.Map k (a, [(k, b)]) -- [(k, (a, [(k, b)]))]
-type NodeKeyCtor = String
-type HollowLoc = (Int, Int)
-type HollowSpan = (HollowLoc, HollowLoc)
-type HollowKey = (Int, Gr.Node) -- hacks to support multiple graphs without having to reindex all the nodes
-data JSGraph = JSGraph {
-  jsg_gr :: AdjList HollowKey (NodeKeyCtor, HollowSpan) HollowSpan
-  , jsg_sccs :: [[HollowKey]]
-} deriving Generic
-data HollowGrState = HollowGrState {
-  st_at :: [HollowKey]
-  , st_gr :: JSGraph
-} deriving Generic
-
-gr2adjlist :: Ord k => (Gr.Node -> k) -> Gr.Gr a b -> AdjList k a b
-gr2adjlist k gr = M.fromList $ map ((k &&& (Gr.lab' &&& map (first k) . Gr.lsuc') . Gr.context gr)) (Gr.nodes gr)
-
 hollow_loc = srcLocLine &&& srcLocCol
-hollow_span = (hollow_loc . realSrcSpanStart &&& hollow_loc . realSrcSpanEnd)
 
-nk_ctor :: NodeKey a -> NodeKeyCtor
+instance ToJSON RealSrcSpan where
+  toJSON sp = toJSON (
+      FS.unpackFS $ srcSpanFile sp
+      , hollow_loc $ realSrcSpanStart sp
+      , hollow_loc $ realSrcSpanEnd sp
+    )
+
+instance ToJSONKey RealSrcSpan where
+  toJSONKey = Aeson.Types.toJSONKeyText (E.decodeUtf8 . LBS.toStrict . Aeson.encode)
+
+instance ToJSON (Spand a) where
+  toJSON (Spand sp _) = toJSON sp
+
+-- :(
+nk_ctor :: NodeKey a -> String
 nk_ctor (NKBind _) = "NKBind"
 nk_ctor (NKApp _) = "NKApp"
+bk_ctor :: BindKey -> String
+bk_ctor (BindNamed _) = "BindNamed"
+bk_ctor (BindLam _) = "BindLam"
+el_ctor :: EdgeLabel -> String
+el_ctor (ArgEdge _ _) = "ArgEdge"
+el_ctor (AppEdge _ _) = "AppEdge"
+el_ctor (BindEdge _) = "BindEdge"
 
-instance Semigroup JSGraph where
-  (JSGraph la lb) <> (JSGraph ra rb) = JSGraph (la <> ra) (lb <> rb)
+defTagField = T.pack $ Aeson.tagFieldName $ Aeson.sumEncoding Aeson.defaultOptions
+defContentsField = T.pack $ Aeson.tagFieldName $ Aeson.sumEncoding Aeson.defaultOptions
+-- fake the impls of the *Key's because the Identifier and Span can't be made Generic from GHC
+instance ToJSON (NodeKey a) where
+  toJSON k = Aeson.object [
+      defTagField .= nk_ctor k
+      , (defContentsField, case k of { NKBind n -> toJSON n; NKApp n -> toJSON n })
+    ]
+
+instance ToJSON BindKey where
+  toJSON k = Aeson.object [
+      defTagField .= bk_ctor k
+      , (defContentsField, case k of { BindNamed b -> toJSON b; BindLam b -> toJSON b })
+    ]
   
-instance Monoid JSGraph where
-  mempty = JSGraph mempty mempty
+instance ToJSON EdgeLabel where
+  toJSON l = Aeson.object [
+      defTagField .= el_ctor l
+      , (defContentsField, case l of { ArgEdge a b -> toJSON (a, b); AppEdge a b -> toJSON (a, b); BindEdge a -> toJSON a })
+    ]
+
+type AdjList a b = IM.IntMap (a, [(Gr.Node, b)]) -- [(k, (a, [(k, b)]))]
+-- type SrcFileMap = M.Map FilePath Int
+data HollowGrState a = HollowGrState {
+  st_at :: [Gr.Node]
+  -- , jsg_sourcelist :: [String]
+  , st_gr :: AdjList (NodeKey a) EdgeLabel
+}
   
-instance ToJSON JSGraph where
-  toEncoding = Aeson.genericToEncoding Aeson.defaultOptions
+instance Semigroup (HollowGrState a) where
+  (HollowGrState la lb) <> (HollowGrState ra rb) = HollowGrState (la <> ra) (lb <> rb)
+
+instance Monoid (HollowGrState a) where
+  mempty = HollowGrState mempty mempty
   
-instance ToJSON HollowGrState where
-  toEncoding = Aeson.genericToEncoding Aeson.defaultOptions
+instance ToJSON (HollowGrState a) where
+  toJSON (HollowGrState a b) = toJSON (a, b)
+
+gr2adjlist :: Gr.Gr a b -> AdjList a b
+gr2adjlist gr = Gr.ufold (\c m -> IM.insert (Gr.node' c) (Gr.lab' c, Gr.lsuc' c) m) mempty gr
+  -- M.fromList $ map ((id &&& (Gr.lab' &&& map (first k) . Gr.lsuc') . Gr.context gr)) (Gr.nodes gr)
+
+-- instance Semigroup JSGraph where
+--   (JSGraph la lb) <> (JSGraph ra rb) = JSGraph (la <> ra) (lb <> rb)
+  
+-- instance Monoid JSGraph where
+--   mempty = JSGraph mempty mempty
+  
+-- instance ToJSON JSGraph where
+--   toEncoding = Aeson.genericToEncoding Aeson.defaultOptions
