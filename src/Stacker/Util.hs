@@ -51,6 +51,9 @@ both f = (f *** f)
 swap (a, b) = (b, a)
 dupe a = (a, a)
 
+lassoc (a, (b, c)) = ((a, b), c)
+rassoc ((a, b), c) = (a, (b, c))
+
 unique :: (Eq a, Ord a) => [a] -> [a]
 unique = S.toList . S.fromList
 
@@ -114,6 +117,12 @@ maplast :: (a -> a) -> [a] -> [a]
 maplast _ [] = []
 maplast f (a:[]) = (f a):[]
 maplast f (a:l) = a:(maplast f l)
+
+map_loc_file f l = mkRealSrcLoc (f $ srcLocFile l) (srcLocLine l) (srcLocCol l)
+map_span_file f sp =
+  let l = realSrcSpanStart sp
+      r = realSrcSpanEnd sp
+  in mkRealSrcSpan (map_loc_file f l) (map_loc_file f r)
 
 snip_src :: Span -> [String] -> [String]
 snip_src sp ls =

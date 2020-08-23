@@ -28,7 +28,7 @@ import Data.Foldable ( fold, asum )
 import qualified Data.Tree as Tr
 import Data.Semigroup ( First(..) )
 import Data.Maybe ( catMaybes, fromMaybe, fromJust, mapMaybe, maybeToList, listToMaybe )
-import Data.List ( uncons, partition, intersperse )
+import Data.List ( uncons, partition, intersperse, minimumBy )
 import Data.Foldable ( foldrM, foldlM )
 import Control.Arrow ( (***), (&&&), first, second )
 import Data.Semigroup ( Last(..) )
@@ -226,24 +226,33 @@ xselfmap :: (a -> a -> b) -> [a] -> [b]
 xselfmap f (a:l) = (map (f a) l) <> xselfmap f l
 xselfmap _ _ = []
 
-pt_search :: DynFlags -> PtStore a -> Segs Prof.CostCentre -> Either BindKey LIdentifier -> ([Gr.Node], NodeGr a)
+pt_search :: DynFlags -> PtStore a -> Segs (Spand Prof.CostCentre) -> Either BindKey LIdentifier -> ([Gr.Node], NodeGr a)
 pt_search dflags (PtStore {..}) cs_segs = 
-  let state_step :: [NodeKey a] -> (M.Map (NodeKey a) Gr.Node, Gr.Node) -> (M.Map (NodeKey a) Gr.Node, Gr.Node)
+  let state_step :: [NodeKey a] -> (M.Map (NodeKey a) (Gr.Node, Spand Prof.CostCentre), Gr.Node) -> (M.Map (NodeKey a) (Gr.Node, Spand Prof.CostCentre), Gr.Node)
       state_step [] t = t
-      state_step l (a, s) = ((M.union a . M.fromList) &&& snd . last) $ zip l [s..] -- (((a,) . M.fromList) &&& snd . last) $ zip l [s..]
+      state_step l (a, s) =
+        let (l', cs) = unzip $ mapMaybe (bisequence . (Just &&& find_min_cs . nk_span)) l
+        in (
+            M.union a $ M.fromList $ zip l' (zip [s..] cs)
+            , s + length l'
+          ) -- (((a,) . M.fromList) &&& snd . last) $ zip l [s..]
       -- nodes :: M.Map (NodeKey a) Gr.Node
-      nodes = -- (uncurry $ uncurry $ uncurry $ NodeStore . flip const)
+      nodes = 
         (`evalState` 0) $
           return mempty
           & mapState (state_step (map NKApp $ concat $ M.elems (_ps_app_groups ^. ag_ident_map)))
           & mapState (state_step (map (NKBind . BindNamed) $ M.keys $ _ps_binds ^. bg_bnd_app_map))
+          & mapState (state_step (map NKBind $ M.elems $ _ps_binds ^. bg_arg_bnd_map))
         
       r0 = ([], [])
       
       -- merge_decomps :: State (...) [([Gr.Node], Gr (NodeKey a) b)] -> State (...) ([Gr.Node], Gr (NodeKey a) b)
       -- basically a custom mconcat
       -- merge_decomps = fmap $ foldr (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) r0  -- egregiously wasteful; think of a better way
-      ident_in_cs ident = not $ null $ segfind cs_segs $ s_span ident
+      find_min_cs :: Span -> Maybe (Spand Prof.CostCentre)
+      find_min_cs sp = case segfind cs_segs sp of
+        l@(_:_) -> Just $ minimumBy (curry $ ([LT, GT] !!) . fromEnum . uncurry containsSpan . both s_span) l -- nominal minimum sized span (could be wrong because )
+        [] -> Nothing
       
       with_ags :: ([LIdentifier] -> NodeState a) -> [AppGroup] -> NodeState a
       with_ags f ags = do
@@ -265,56 +274,54 @@ pt_search dflags (PtStore {..}) cs_segs =
       -- pt_search' :: Bool -> LIdentifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
       pt_search' :: Either BindKey LIdentifier -> NodeState a
       pt_search' m_ident =
-        let (node_sucs, within_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
+        let (nk_sucs, m_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
               Left bk ->
-                let (ags, within_cs) = case bk of
+                let (ags, m_cs') = case bk of
                       BindNamed fn_ident -> (
                           concat
                           $ (maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? fn_ident)
                           <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident)
-                          , ident_in_cs fn_ident
+                          , find_min_cs $ s_span fn_ident
                         )
                       BindLam fn_span -> (
                           segfind (_ps_app_groups ^. ag_span_map) fn_span
-                          , not $ null $ segfind cs_segs fn_span
+                          , find_min_cs fn_span
                         )
                 in (
                     [
-                      ((node, BindEdge $ bk_span bk), with_ag (pt_search' . Right) ag)
+                      ((NKApp ag, BindEdge $ bk_span bk), with_ag (pt_search' . Right) ag)
                       | ag <- ags
-                      , node <- maybeToList $ nodes M.!? (NKApp ag)
                     ]
                       -- $ M.toList $ M.restrictKeys nodes (S.fromList $ map NKApp )
-                    , within_cs
+                    , m_cs'
                   )
-              Right ident -> (, ident_in_cs ident) $ 
+              Right ident -> (, find_min_cs $ s_span ident) $
                   if 
                      | Just (bnd, ags) <- (_ps_binds ^. bg_bnd_app_map) !?~ ident
                      -> (
-                        mapMaybe (bisequence . (
-                            fmap (,AppEdge ident bnd) . (nodes M.!?) . NKApp
-                            &&& Just . with_ag (pt_search' . Right)
-                          )) ags
+                        map (
+                            (,AppEdge ident bnd) . NKApp
+                            &&& with_ag (pt_search' . Right)
+                          ) ags
                       )
                      | Just (arg, bk) <- (_ps_binds ^. bg_arg_bnd_map) !?~ ident
                      -- , Nothing <- (nodes !? (NKApp ag)) >>= (flip match gr) -- crap, can't build the graph from the bottom up because I need to anti-cycle, so children will have to do the matching
-                     -> (
-                        maybeToList $ bisequence (
-                            fmap (,ArgEdge ident arg) $ nodes M.!? (NKBind bk),
-                            Just $ pt_search' (Left bk)
-                          )
-                      )
+                     -> [((NKBind bk, ArgEdge ident arg), pt_search' (Left bk))]
                      
                      | otherwise -> mempty
-        in if within_cs
-          then bisequence (
-              return (map (fst . fst) node_sucs),
-              foldrM (\((this_node, this_edge_lab), next) next_edges -> do
-                  (next_nodes, next_edges') <- next
-                  return $ map (this_node, , this_edge_lab) next_nodes <> next_edges <> next_edges'
-                ) mempty node_sucs
-            )
-          else return r0
+        in case m_cs of
+          Just cs ->
+            bisequence (
+                return (mapMaybe (fmap fst . (nodes M.!?) . fst . fst) nk_sucs),
+                foldrM (\((this_nk, this_edge_lab), next) next_edges -> do
+                    (next_nodes, next_edges') <- next
+                    let next_nodes' = case nodes M.!? this_nk of
+                          Just (n, _cs) -> map (n, , this_edge_lab) next_nodes
+                          Nothing -> mempty
+                    return $ next_nodes' <> next_edges <> next_edges'
+                  ) mempty nk_sucs
+              )
+          Nothing -> return r0
         
       -- pt_search False ident
       --   | 
@@ -325,7 +332,7 @@ pt_search dflags (PtStore {..}) cs_segs =
       --   | Just bind_pt <- _ps_binds M.!? ident
       --   =
           
-  in second (Gr.mkGraph (map swap $ M.toList nodes)) . (`evalState` mempty) . pt_search'
+  in second (Gr.mkGraph (map (\(nk, (n, sp_cs)) -> (n, (nk, Prof.costCentreNo $ s_payload sp_cs))) $ M.toList nodes)) . (`evalState` mempty) . pt_search' -- NodeState and `nodes` (bunches of (NodeKey a, CostCentre, Int))
 
 -- grhs_args :: HieAST a -> Maybe (IdentMap a)
 -- grhs_args ast | has_node_constr ["GRHS"] ast = Just $ generateReferencesMap [ast]
@@ -353,8 +360,8 @@ main = do
       let loc_cs_forest = Tr.foldTree (
               curry $
               uncurry (flip fromMaybe)
-              . ((uncurry (liftA2 (fmap (\x -> [x]) . Tr.Node)) . second pure) &&& snd)
-              . (bisequence . (pure &&& cs_span) *** concat)
+              . ((uncurry (liftA2 (fmap (\x -> [x]) . Tr.Node)) . second Just) &&& snd)
+              . (bisequence . (Just &&& cs_span) *** concat)
             ) cs_tree -- (SrcSpan, Profile)
           pts = map (mk_pt_store dflags) (concatMap (M.elems . getAsts . hie_asts) hies)
           lined_srcs = M.fromList $ map (hie_hs_file &&& lines . UB.toString . hie_hs_src) hies
@@ -375,7 +382,8 @@ main = do
               Nothing -> (next, Tr.Node css (map snd l))
           (targs, targ_ts) = unzip $ mapMaybe (bisequence . second pure . Tr.foldTree targ_fold) loc_cs_forest
           -- targ_segs' = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . second (const ()) . swap)) targ_ts
-          targ_segs = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . uncurry Spand . swap)) targ_ts
+          targ_segs = SegTree $ STree.fromList $ concatMap (Tr.foldTree ((.concat) . (:) . seg2intervalish . uncurry ($) . (Spand . fst &&& uncurry Spand) . swap)) targ_ts -- eep. this segment tree is starting to really grind my gears... it's hard to put things in, it's hard to take things out...
+          -- here i just wanted to pull the span out, but it's way less painful to just duplicate it into the stored type vs. having to reconstruct it from the Interval type, with its negative and positive iftys and whatnot
           bks = 
             (map (Left . BindNamed) $ ivl_payloads $ concatMap (STree.superintervalQuery bound_fns . span2interval . snd) targs)
             <> ([
@@ -412,9 +420,9 @@ main = do
           -- ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
           -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targs)
           -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
-          const (pure ()) $ putStrLn $ unlines $ map (\(n, gr) ->
-              unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . Gr.lab gr)) $ unique $ Gr.edges gr
-            ) grs
+          -- const (pure ()) $ putStrLn $ unlines $ map (\(n, gr) ->
+          --     unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . fst . Gr.lab gr)) $ unique $ Gr.edges gr
+          --   ) grs
           putStrLn $ unlines $ map (ppr_safe dflags . fst) $ grs
           putStrLn $ unlines $ map (\(ns, gr) -> unlines $ map (
               unlines . Tr.foldTree (
@@ -428,7 +436,7 @@ main = do
                           . ((bisequence . (
                               Just
                               &&& (lined_srcs M.!?) . unpackFS . srcSpanFile . nk_span
-                            )) . Gr.lab')
+                            )) . fst . Gr.lab')
                           =<<
                         ) . fst . flip Gr.match gr
                       *** concatMap (map (' ':))

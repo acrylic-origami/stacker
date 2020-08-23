@@ -175,7 +175,7 @@ data EdgeLabel =
   | AppEdge LIdentifier LIdentifier -- loc of source, loc of target binding
   | BindEdge Span -- just the bindee location itself
   -- the name location that links the nodes together (e.g. a symbol within an AppGroup + its binding, the arg )
-type NodeGr a = Gr.Gr ((NodeKey a)) EdgeLabel
+type NodeGr a = Gr.Gr ((NodeKey a, Int)) EdgeLabel
 type NodeState a = State (S.Set AppGroup) ([Gr.Node], [Gr.LEdge EdgeLabel])
 
 -- OUTPUT INTERFACE --
@@ -208,7 +208,7 @@ el_ctor (AppEdge _ _) = "AppEdge"
 el_ctor (BindEdge _) = "BindEdge"
 
 defTagField = T.pack $ Aeson.tagFieldName $ Aeson.sumEncoding Aeson.defaultOptions
-defContentsField = T.pack $ Aeson.tagFieldName $ Aeson.sumEncoding Aeson.defaultOptions
+defContentsField = T.pack $ Aeson.contentsFieldName $ Aeson.sumEncoding Aeson.defaultOptions
 -- fake the impls of the *Key's because the Identifier and Span can't be made Generic from GHC
 instance ToJSON (NodeKey a) where
   toJSON k = Aeson.object [
@@ -233,7 +233,7 @@ type AdjList a b = IM.IntMap (a, [(Gr.Node, b)]) -- [(k, (a, [(k, b)]))]
 data HollowGrState a = HollowGrState {
   st_at :: [Gr.Node]
   -- , jsg_sourcelist :: [String]
-  , st_gr :: AdjList (NodeKey a) EdgeLabel
+  , st_gr :: AdjList (NodeKey a, Int) EdgeLabel
 }
   
 instance Semigroup (HollowGrState a) where
