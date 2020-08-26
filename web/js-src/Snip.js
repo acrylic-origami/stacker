@@ -1,39 +1,52 @@
 import React from 'react'
 import { offsetTo } from './Util'
-
-const NUM_SNIP_DEPTH_COLORS = 4;
+import { NUM_SNIP_DEPTH_COLORS } from './const.js'
 
 export default class extends React.PureComponent {
 	constructor(props) {
 		super(props);
 		this.aref = React.createRef();
 	}
+	componentDidMount() {
+		if(+this.props.scroll_idx > 0) {
+			this.scroll_here();
+		}
+	}
 	componentDidUpdate(pprops) {
-		if(+this.props.scroll_idx > 0 && this.props.scroll_idx !== pprops.scroll_idx) {
+		if(+this.props.scroll_idx > 0 && (this.props.scroll_idx !== pprops.scroll_idx || pprops.root !== this.props.root)) {
+			this.scroll_here();
+		}
+	}
+	scroll_here = () => {
+		if(this.aref.current != null && this.props.root != null) {
 			const offset = offsetTo(this.aref.current, this.props.root);
-			const box = this.props.root.getClientBoundingRect();
-			this.props.root.scroll({
-				left: offset[0] - box.width / 2,
-				top: offset[1] - box.height / 2,
-				behavior: 'smooth'
-			});
+			if(offset != null) {
+				// offset can be null in between renders
+				const box = this.props.root.getBoundingClientRect();
+				this.props.root.scroll({
+					left: offset[0] - box.width / 2,
+					top: offset[1] - box.height / 2,
+					behavior: 'smooth'
+				});
+			}
 		}
 	}
 	handleTaggedEvent = e => {
+		console.log('???????');
 		const handler = {
 			'click': this.props.onClick,
-			'mouseenter': this.props.onMouseOver,
-			'mouseleave': this.props.onMouseEnter
+			'mouseenter': this.props.onMouseEnter,
+			'mouseleave': this.props.onMouseLeave
 		}[e.type];
+		console.log(e.type);
 		handler(e, this.props.ks) // need to shuttle ks around so this function isn't regenerated on every re-render of the parent; I wish it wasn't this aware
 	}
 	render = () => <a
-		className={`snip snip-${Math.min(NUM_SNIP_DEPTH_COLORS, this.props.ks.length)} ${this.props.className}`}
+		className={`snip snip-${Math.min(NUM_SNIP_DEPTH_COLORS, this.props.ks.size)} ${this.props.className}`}
 		href="#"
-		onClick={this.handleTaggedEvent}
+		onClick={e => console.log('???') || this.handleTaggedEvent(e)}
 		onMouseEnter={this.handleTaggedEvent}
 		onMouseLeave={this.handleTaggedEvent}
-		ref={this.aref}
 	>
 		{this.props.children}
 	</a>

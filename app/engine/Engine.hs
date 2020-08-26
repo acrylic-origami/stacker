@@ -394,7 +394,7 @@ main = do
   -- putStrLn $ unlines $ map (ppr_ast dflags) $ M.elems $ getAsts $ hie_asts $ head hies
   
   mprof <- Prof.decode' <$> TIO.readFile fprof
-  case mprof of
+  case mprof of -- const (pure ()) $ 
     Left s -> error s
     Right (Prof.costCentres -> Just cs_tree) -> -- curry $ fmap (uncurry Tr.Node) . bisequence .
       let loc_cs_forest = Tr.foldTree (
@@ -446,6 +446,8 @@ main = do
               -- srcfilelist = unique $ concatMap (map (unpackFS . srcSpanFile) . uncurry (<>) . (map nk_span . Gr.labNodes &&& map s_span . Gr.labEdges)) grs -- collect all SrcSpan files and map them
               -- srcfilemap = M.fromList $ zip srcfilelist [0..]
       in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest) -- const (putStrLn $ unlines $ head $ M.elems $ lined_srcs) 
+        -- putStrLn $ ppr_safe dflags bks
+        -- putStrLn $ ppr_safe dflags bound_fns'
         writeFile "static/gr.json" (UBL.toString $ Aeson.encode hollow_state)
         const (pure ()) $ do
           -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts

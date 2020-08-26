@@ -4,7 +4,7 @@ import hljs from 'highlight.js/lib/core'
 import hs from 'highlight.js/lib/languages/haskell'
 import IntervalTree from '@flatten-js/interval-tree'
 import Snip from './Snip'
-import { span_contains, map_intersect } from './Util'
+import { span_contains, map_intersect, candidate } from './Util'
 import { Set, Map } from 'immutable'
 
 hljs.registerLanguage('haskell', hs);
@@ -13,7 +13,6 @@ function ivl_split(t) {
 	// create disjoint open intervals with pooled keys
 	// accept list with two intervals, for fast identification of disjoint
 	// please disregard how much this function sucks
-	console.log(t);
 	const [a, b] = t;
 	const ck = a[2].concat(b[2]);
 	if(a[0] === b[0] && a[1] === b[1]) {
@@ -85,15 +84,28 @@ export default class extends React.Component {
 		// i'd really like to make a pure function that determines how the keys are rendered, and there's no reason why I can't: the only one I can't really do is opacity based on a selected group because it's tied to state of what group is selected, so I'll just implement that later
 		// I probably need to push a semantics to the keys somehow. Mainly I need to separate reasons from actual attributes, that's the least difference. It also makes a difference when it's bound to an argument or another binding, which leaks a bit of the abstraction into this module, which should be a dumb renderer, just needing to preserve keys
 		// then that's it, just an interfacing contract to put the key first, then the span, in a tuple
-		/* props :: Hashable k => {
+		/*
+		I need to know if the span is a node, or part of an edge. We can just enumerate them: the spans can be:
+		- elements in appgroups
+			- .. that point to arguments (arg edge meta)
+			- .. that point to binds (app edge meta)
+		- arguments (arg edge meta)
+		- bindings arg-looking (bind nodes, arg edge targets)
+		- bindings app-looking (app edge meta)
+		
+		these are all associated to 
+		*/
+		/*
+		props :: {
 			body: String,
-			spans: Map k ((Int, Int), (Int, Int)),
+			spans: [(Span, k)],
 			should_scroll_to: [k] -> Bool,
 			wrap_snip: String -> [k] -> React.Component
 		}
 		*/
 		this.state = {
-			src_snips: [] // intermediate state so that re-snipping and re-rendering is decoupled from the props upstairs changing inconsequentially
+			src_snips: [], // [(Span, ?(Map Span k))] // intermediate state so that re-snipping and re-rendering is decoupled from the props upstairs changing inconsequentially
+			root_container_el: null,
 		};
 		this.src_ref = React.createRef();
 	}
@@ -108,7 +120,9 @@ export default class extends React.Component {
 		}
 		if(diff.src_snips) {
 			requestAnimationFrame(e => {
-				hljs.highlightBlock(this.src_ref.current)
+				hljs.highlightBlock(this.src_ref.current);
+				// const a = hljs.highlight('haskell', 'module A where')
+				// debugger;
 			}); // assume synchronous
 		}
 	}
@@ -119,10 +133,12 @@ export default class extends React.Component {
 			// const spans = this.state.st_at.map(e => this.state.st_gr.jsg_gr.get(e)[1])
 			// 	.filter(l => !!l.length)[0]
 			// 	.map(([_, sp]) => sp)
-			const span_chars = this.props.spans.toArray().map(
-				([k, [[ty, [[ll, lc], [rl, rc]]], _edges]]) =>
-					[cum_line_chars[ll - 1] + lc - 1, cum_line_chars[rl - 1] + rc - 1, [k]]
-			);
+			const span_chars = this.props.spans.map(
+				([span, k]) => {
+					const [_src, [ll, lc], [rl, rc]] = span;
+					return [cum_line_chars[ll - 1] + lc - 1, cum_line_chars[rl - 1] + rc - 1, [[span, k]]];
+				}
+			); // :: [(Int, Int, (Span, k))]
 			const T = new IntervalTree();
 			for(let i = 0; i < span_chars.length; i++) {
 				const hits = T.search(span_chars[i].slice(0, 2), ((v, k) => ({ key: k, value: v })));
@@ -137,20 +153,20 @@ export default class extends React.Component {
 						// }
 					}
 				}
+				// debugger;
 				for(const hit of hits)
 					T.remove(hit.key);
 				for(const q of Q)
 					T.insert(q.slice(0, 2), q[2]);
 			}
-			const I = T.items; // [((Int, Int), [Int])]
+			const I = T.items; // [{ key: (Int, Int), value: [(Span, k)] }]
 			const D = Q.defer();
-			console.log(I);
 			if(I.length > 0) {
 				I.sort((l, r) => l.key[0] > r.key[0]); // sort intervals in ascending order
 				const S = [[[0, I[0].key[0]], null]];
 				for(let i = 0; i < I.length; i++) {
 					S.push(
-						[[I[i].key[0], I[i].key[1]], I[i].value],
+						[[I[i].key[0], I[i].key[1]], Map(I[i].value)],
 						[[I[i].key[1], i >= I.length - 1 ? undefined : I[i + 1].key[0]], null]
 					);
 				}
@@ -168,56 +184,51 @@ export default class extends React.Component {
 			return D.promise;
 		}
 	}
-	
-	candidate(ks) {
-		const sps = map_intersect(this.props.spans, ks);
-		const big_sps = sps.reduce((s, spa, ka) => sps.reduce((s_, spb, kb) => {
-			if(!s_.has(ka) && spa !== spb && span_contains(spa[0], spb[0])) {
-				return s_.add(ka); // eliminate all spans that contain other spans
-			}
-			else {
-				return s_;
-			}
-		}, s), Set());
-		return sps.deleteAll(big_sps).toArray[0]; // then pick one of the okay spans at random
-	}
-	snipHoverHandler = (e, ks) => {
+	snipHoverHandler = (e, sp_ks) => {
+		console.log(e, sp_ks);
 		switch(e.type) {
 			case 'mouseenter':
-				const sp = this.candidate(ks);
-				this.setState({ snip_focuses: sp[0] })
+				const sps = sp_ks.keySeq().toSet();
+				const sp = candidate(sps);
+				this.setState({ snip_focuses: sp })
 				break;
 			case 'mouseleave':
 				this.setState({ snip_focuses: null })
 				break;
 		}
 	}
-	snipClickHandler = (e, ks) => this.props.onSnipClick(this.candidate(ks));
+	rootRefChangeHandler = root_container_el => this.setState({ root_container_el });
+	// snipClickHandler = (e, ks) => this.props.onSnipClick(this.candidate(ks));
+	// the trickiest part is to figure out a way to distinguish the type of the span of the "reason" given that the list of elements coming in are completely agnostic to that. So find some way to mark it, plus add all the accompanying data in an elegant way. Otherwise, just pushing in keys of all the nodes that these are pointing to, hopefully without intersection (ah wait. There will be intersection with duplicated names. So... maybe not a map? As if I needed it to be unique anyways. multimap? eh. I expect them to be unique to each span. So no. No multimap. Really the spans should be their own keys. I just don't like to serialize and deserialize the data just for mapping efficiency. Although Immutable Maps can do better than that. So just key based on the straight spans. yeah.)
 	
 	render = () => 
-		<pre>
-			<code ref={this.src_ref} id="src_root" className="language-haskell">
-				{
-					this.state.src_snips.map(([sp, ks]) =>
-							ks === null
-								? this.props.body.slice(sp[0], sp[1])
-								: <Snip
-									onClick={this.props.snipClickHandler}
-									onMouseEnter={this.snipHoverHandler}
-									onMouseLeave={this.snipHoverHandler}
-									ks={ks}
-									key={sp.toString()}
-									className={
-										ks.indexOf(this.state.snip_focuses) !== -1
-										? 'focused'
-										: ''
-									}
-									scroll_idx={this.props.should_scroll_to(ks)} // just 0 or 1 for now: include re-focusing as needed
-								>
-									{ this.props.wrap_snip(this.props.body.slice(sp[0], sp[1]), ks) }
-								</Snip>
-						)
-				}
-			</code>
-		</pre>
+		<div ref={this.rootRefChangeHandler} id="src_container">
+			<pre>
+				<code ref={this.src_ref} id="src_root" className="language-haskell">
+					{
+						this.state.src_snips.map(([sp, sp_ks]) =>
+								sp_ks === null
+									? this.props.body.slice(sp[0], sp[1])
+									: <span><span onClick={e => console.log('????')}>???????</span><Snip
+										onClick={this.props.snipClickHandler}
+										onMouseEnter={this.snipHoverHandler}
+										onMouseLeave={this.snipHoverHandler}
+										ks={sp_ks}
+										key={sp.toString()}
+										className={
+											sp_ks.has(this.state.snip_focuses)
+											? 'focused'
+											: ''
+										}
+										root={this.state.root_container_el}
+										scroll_idx={this.props.should_scroll_to(sp_ks)} // just 0 or 1 for now: include re-focusing as needed
+									>
+										<div onClick={e => console.log('????')}>??????</div>
+										{ this.props.wrap_snip(this.props.body.slice(sp[0], sp[1]), sp_ks) /* note that having arbitrary wrapping tags is fine wrt highlighting because highlight.js is smart and can break up its highlight tags across the tags we put in if needed */ }
+									</Snip></span>
+							)
+					}
+				</code>
+			</pre>
+		</div>
 }

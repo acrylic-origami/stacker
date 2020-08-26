@@ -3,8 +3,18 @@ body, html {
 	width:100%;
 	height:100%;
 }
+#src_container {
+	position:relative;
+	display:block;
+	width:100%;
+	height:100%;
+	overflow:scroll;
+}
 #src_root {
 	position:relative;
+	display:block;
+	font-family: 'Source Code Pro', monospace;
+	font-size:0.7em;
 }
 #scc_section {
 	

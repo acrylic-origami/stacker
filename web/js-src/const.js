@@ -1,0 +1,1 @@
+export const NUM_SNIP_DEPTH_COLORS = 4;
