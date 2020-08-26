@@ -167,6 +167,12 @@ instance Outputable (PtStore a) where
 instance Outputable (NodeKey a) where
   ppr (NKApp a) = O.text "NKApp" <+> ppr a
   ppr (NKBind b) = O.text "NKBind" <+> ppr b
+  
+instance Outputable EdgeLabel where
+  ppr el@(ArgEdge a b) = O.text (el_ctor el) <+> ppr a <+> ppr b
+  ppr el@(AppEdge a b) = O.text (el_ctor el) <+> ppr a <+> ppr b
+  ppr el@(BindEdge a) = O.text (el_ctor el) <+> ppr a
+  
 
 --------------------------------------------------
 
@@ -176,7 +182,7 @@ data EdgeLabel =
   | BindEdge Span -- just the bindee location itself
   -- the name location that links the nodes together (e.g. a symbol within an AppGroup + its binding, the arg )
 type NodeGr a = Gr.Gr ((NodeKey a, Int)) EdgeLabel
-type NodeState a = State (S.Set AppGroup) ([Gr.Node], [Gr.LEdge EdgeLabel])
+type NodeState a = State (S.Set AppGroup) ([(Gr.Node, EdgeLabel)], [Gr.LEdge EdgeLabel])
 
 -- OUTPUT INTERFACE --
 
@@ -231,7 +237,7 @@ instance ToJSON EdgeLabel where
 type AdjList a b = IM.IntMap (a, [(Gr.Node, b)]) -- [(k, (a, [(k, b)]))]
 -- type SrcFileMap = M.Map FilePath Int
 data HollowGrState a = HollowGrState {
-  st_at :: [Gr.Node]
+  st_at :: [(Gr.Node, EdgeLabel)]
   -- , jsg_sourcelist :: [String]
   , st_gr :: AdjList (NodeKey a, Int) EdgeLabel
 }
@@ -243,7 +249,10 @@ instance Monoid (HollowGrState a) where
   mempty = HollowGrState mempty mempty
   
 instance ToJSON (HollowGrState a) where
-  toJSON (HollowGrState a b) = toJSON (a, b)
+  toJSON (HollowGrState a b) = Aeson.object [
+      "at" .= a,
+      "gr" .= b
+    ]
 
 gr2adjlist :: Gr.Gr a b -> AdjList a b
 gr2adjlist gr = Gr.ufold (\c m -> IM.insert (Gr.node' c) (Gr.lab' c, Gr.lsuc' c) m) mempty gr

@@ -259,7 +259,7 @@ xselfmap :: (a -> a -> b) -> [a] -> [b]
 xselfmap f (a:l) = (map (f a) l) <> xselfmap f l
 xselfmap _ _ = []
 
-pt_search :: DynFlags -> PtStore a -> Segs (Spand Prof.CostCentre) -> Either BindKey LIdentifier -> ([Gr.Node], NodeGr a)
+pt_search :: DynFlags -> PtStore a -> Segs (Spand Prof.CostCentre) -> Either BindKey LIdentifier -> ([(Gr.Node, EdgeLabel)], NodeGr a)
 pt_search dflags (PtStore {..}) cs_segs = 
   let state_step :: [NodeKey a] -> (M.Map (NodeKey a) (Gr.Node, Spand Prof.CostCentre), Gr.Node) -> (M.Map (NodeKey a) (Gr.Node, Spand Prof.CostCentre), Gr.Node)
       state_step [] t = t
@@ -270,7 +270,7 @@ pt_search dflags (PtStore {..}) cs_segs =
             , s + length l'
           ) -- (((a,) . M.fromList) &&& snd . last) $ zip l [s..]
       -- nodes :: M.Map (NodeKey a) Gr.Node
-      nodes = 
+      nodes =
         (`evalState` 0) $
           return mempty
           & mapState (state_step (map NKApp $ concat $ M.elems (_ps_app_groups ^. ag_ident_map)))
@@ -345,11 +345,11 @@ pt_search dflags (PtStore {..}) cs_segs =
         in case m_cs of
           Just cs ->
             bisequence (
-                return (mapMaybe (fmap fst . (nodes M.!?) . fst . fst) nk_sucs),
+                return (mapMaybe (bisequence . (fmap fst . (nodes M.!?) *** Just) . fst) nk_sucs),
                 foldrM (\((this_nk, this_edge_lab), next) next_edges -> do
                     (next_nodes, next_edges') <- next
                     let next_nodes' = case nodes M.!? this_nk of
-                          Just (n, _cs) -> map (n, , this_edge_lab) next_nodes
+                          Just (n, _cs) -> map ((n, , this_edge_lab) . fst) next_nodes
                           Nothing -> mempty
                     return $ next_nodes' <> next_edges <> next_edges'
                   ) mempty nk_sucs
@@ -365,7 +365,14 @@ pt_search dflags (PtStore {..}) cs_segs =
       --   | Just bind_pt <- _ps_binds M.!? ident
       --   =
           
-  in second (Gr.mkGraph (map (\(nk, (n, sp_cs)) -> (n, (nk, Prof.costCentreNo $ s_payload sp_cs))) $ M.toList nodes)) . (`evalState` mempty) . pt_search' -- NodeState and `nodes` (bunches of (NodeKey a, CostCentre, Int))
+  in second (Gr.mkGraph (map (\(nk_el, (n, sp_cs)) ->
+        (n, (
+            nk_el
+            , Prof.costCentreNo $ s_payload sp_cs
+          ))
+      ) $ M.toList nodes))
+    . (`evalState` mempty) . pt_search'
+    -- NodeState and `nodes` (bunches of (NodeKey a, CostCentre, Int))
 
 -- grhs_args :: HieAST a -> Maybe (IdentMap a)
 -- grhs_args ast | has_node_constr ["GRHS"] ast = Just $ generateReferencesMap [ast]
@@ -475,7 +482,7 @@ main = do
                       *** concatMap (map (' ':))
                     )
                 )
-            ) $ Gr.dff ns gr) grs
+            ) $ Gr.dff (map fst ns) gr) grs
           {- $ map (\case -- gr_prettify (ppr_safe dflags) id
               (Just node, gr) -> gr_prettify (ppr_safe dflags) id gr
               (Nothing, _) -> mempty
