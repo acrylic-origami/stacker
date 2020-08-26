@@ -89,6 +89,9 @@ gr_prettify sa sb g = foldr (showsContext . Gr.context g) id (Gr.nodes g) ""
 passtrace :: Show a => a -> a
 passtrace = uncurry traceShow . dupe
 
+traceWith :: (a -> String) -> a -> a
+traceWith f a = trace (f a) a
+
 ppr_safe :: Outputable a => DynFlags -> a -> String
 ppr_safe d = showSDoc d . interppSP . pure
 

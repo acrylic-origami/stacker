@@ -95,7 +95,7 @@ ppr_ast_node :: DynFlags -> HieAST a -> String
 ppr_ast_node d = ppr_safe d . ((nodeAnnotations &&& M.map (identInfo) . nodeIdentifiers) . nodeInfo &&& nodeSpan)
 
 ppr_ast :: DynFlags -> HieAST a -> String
-ppr_ast d = uncurry ((++) . (++"\n")) . (ppr_ast_node d &&& unlines . map (ppr_ast d) . nodeChildren)
+ppr_ast d = uncurry ((++) . (++"\n")) . (ppr_ast_node d &&& unlines . map (unlines . map (' ':) . lines . ppr_ast d) . nodeChildren)
 
 --------------------------------------------------------------
 
@@ -113,8 +113,8 @@ cs_span (Prof.CostCentre {..}) = txt2span =<< costCentreSrc
     txt2span_multi = fmap (fsLit *** mapMaybe readMaybe) . ((uncons . snd) =<<) . uncons . map T.unpack . getAllTextSubmatches . (=~ ("^(.*):\\(([0-9]+),([0-9]+)\\)\\-\\(([0-9]+),([0-9]+)\\)$" :: T.Text)) -- safe drop 1
     txt2span_single = fmap (fsLit *** mapMaybe readMaybe) . ((uncons . snd) =<<) . uncons . map T.unpack . getAllTextSubmatches . (=~ ("^(.*):([0-9]+):([0-9]+)\\-([0-9]+)$" :: T.Text)) -- . uncurry (trace . show) . dupe
 
-fNS :: [FastString]
-fNS = ["Match"] -- I really hope the trees look the same for these two always every time: single level of first arg as 
+-- fNS :: [FastString]
+-- fNS = ["Match"] -- I really hope the trees look the same for these two always every time: single level of first arg as 
 aPPS :: [FastString]
 aPPS = ["HsApp", "OpApp"]
 
@@ -135,32 +135,60 @@ lift_ctx_info :: (ContextInfo -> Bool) -> (HieAST a -> Bool)
 lift_ctx_info f = (any (any f . S.toList . identInfo)) . nodeIdentifiers . nodeInfo
 
 arg_idents :: HieAST a -> (([LIdentifier], [LIdentifier]), [HieAST a])
-arg_idents = first (both (concatMap getShallowReferences) . partition (lift_ctx_info $ \case { MatchBind -> True; _ -> False })) . shallower (has_node_constr ["GRHS"])
+arg_idents ast =
+  first (
+      both (concatMap getShallowReferences)
+      . partition (lift_ctx_info $ \case { MatchBind -> True; _ -> False })
+    )
+  $ mappend ([ast], mempty)
+  $ mconcat $ map (shallower (has_node_constr ["GRHS", "HsValBinds"])) (nodeChildren ast) -- HsValBinds for some funky `where` clauses
 
 mk_pt_store :: DynFlags -> HieAST TypeIndex -> PtStore TypeIndex
 mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree $ STree.fromList $ map seg2intervalish s)) . snd . mk_pt_store' False . ([],) where
   mk_pt_store' :: Bool -> ([HieAST TypeIndex], HieAST TypeIndex) -> ([AppGroup], PtStore TypeIndex)
   mk_pt_store' _ (ast_stack, ast)
-    | has_node_constr fNS ast
-    , Just (First True) <- mconcat $ map (\ast' -> if has_node_constr ["GRHS"] ast' then Just (First False) else if has_node_constr ["FunBind"] ast' then Just (First True) else Nothing) (ast:ast_stack)
-    , (((fn_name:_), fn_args), grhss@(_:_)) <- arg_idents ast
+    | has_node_constr ["PatBind", "Match"] ast
+    , Just (First True) <- mconcat $ map (\ast' ->
+        if has_node_constr ["GRHS"] ast'
+          then Just (First False)
+          else if has_node_constr ["FunBind", "PatBind"] ast'
+            then Just (First True)
+            else Nothing
+      ) (ast:ast_stack)
+    , ((fn_names, fn_args), grhss@(_:_)) <- arg_idents ast
     = let next_ast_stack = (ast : ast_stack)
           -- fn_names = (M.keys $ generateReferencesMap $ [(\x -> if null x then error "1" else head x) $ nodeChildren ast])
           (next_names, next_store) = mconcat $ map (mk_pt_store' False . (next_ast_stack,)) grhss
-          fn_key = if has_node_constr ["HsLam"] ast then BindLam (nodeSpan ast) else BindNamed fn_name
-      in flip const (ast, dflags, (grhss), (fn_name, fn_args), next_store, fn_key)
+          fn_keys = if has_node_constr ["HsLam"] ast
+            then [BindLam (nodeSpan ast)]
+            else if not $ null fn_names
+              then map BindNamed fn_names
+              else map BindNamed fn_args -- pattern-match case
+          keymerge n a b = trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a
+      in flip const (ast, dflags, (grhss), (fn_args), next_store)
+        $ trace (ppr_safe dflags (fn_names, fn_keys))
         $ (
             [] -- clear accumulated names
             , next_store
             & ps_binds %~ (
-                (bg_arg_bnd_map %~ (
-                    flip (foldr (flip (M.insertWithKey (\n a b -> trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a)) fn_key)) (filter (is_var_name . s_payload) $ unique fn_args)
-                  ))
+                (
+                    bg_arg_bnd_map %~ (
+                        if not $ null fn_names
+                          then M.unionWithKey keymerge
+                            $ M.fromList
+                            $ map (, head fn_keys)
+                            $ filter (is_var_name . s_payload)
+                            $ unique fn_args
+                          else id
+                      )
+                  )
                 . (
-                    case fn_key of 
-                      BindNamed i ->
-                        (bg_bnd_app_map %~ (M.insertWith (<>) i next_names)) -- (bg_named_lookup %~ S.insert i) .
-                      _ -> id
+                    bg_bnd_app_map %~ (\m ->
+                        foldr (\case 
+                            BindNamed i -> M.insertWith (<>) i next_names
+                            _ -> id
+                          ) m fn_keys
+                      )
                   )
                  -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
               )
@@ -177,14 +205,19 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
        if | is_this_bind || is_this_case
           -> let (binder_ags, binder_store) =
                     if is_this_bind
-                      then mk_pt_store' False (next_ast_stack, (!!1) $ nodeChildren ast)
+                      then mk_pt_store' False (next_ast_stack,nodeChildren ast !! 1)
                       else fromMaybe mempty $ mk_pt_store' False . (next_ast_stack,) <$> listToMaybe (nodeChildren ast) -- watching out for EmptyCase
                  bindees :: [LIdentifier]
                  (bindees, (next_names, next_store)) =
                     first (filter (is_var_name . s_payload)) $
                     if is_this_bind
                       then (
-                          map (uncurry (flip Spand)) $ concatMap (bisequence . (pure *** map fst)) $ M.toList $ generateReferencesMap $ take 1 $ nodeChildren ast
+                          map (uncurry (flip Spand))
+                            $ concatMap (bisequence . (pure *** map fst))
+                            $ M.toList
+                            $ generateReferencesMap
+                            $ take 1
+                            $ nodeChildren ast
                           , mempty
                         )
                       else (snd *** mconcat . map (mk_pt_store' False . (next_ast_stack,))) $ mconcat $ map arg_idents $ drop 1 $ nodeChildren ast
