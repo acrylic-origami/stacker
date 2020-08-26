@@ -32,19 +32,17 @@ export default class extends React.PureComponent {
 		}
 	}
 	handleTaggedEvent = e => {
-		console.log('???????');
 		const handler = {
 			'click': this.props.onClick,
 			'mouseenter': this.props.onMouseEnter,
 			'mouseleave': this.props.onMouseLeave
 		}[e.type];
-		console.log(e.type);
 		handler(e, this.props.ks) // need to shuttle ks around so this function isn't regenerated on every re-render of the parent; I wish it wasn't this aware
 	}
 	render = () => <a
 		className={`snip snip-${Math.min(NUM_SNIP_DEPTH_COLORS, this.props.ks.size)} ${this.props.className}`}
 		href="#"
-		onClick={e => console.log('???') || this.handleTaggedEvent(e)}
+		onClick={this.handleTaggedEvent}
 		onMouseEnter={this.handleTaggedEvent}
 		onMouseLeave={this.handleTaggedEvent}
 	>

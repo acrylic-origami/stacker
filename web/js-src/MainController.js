@@ -72,14 +72,12 @@ export default class extends React.Component {
 	keyPressHandler = e => {
 		console.log(e);
 	}
-	snipClickHandler = (e, s) => {
+	snipClickHandler = (e, sp_ks) => {
 		// s :: (Span, Map Span (SPANTY, FWEdge)) // first span is the span of the mini region that was clicked
-		console.log(e, s);
-		console.log('?');
 		
-		const [_spmini, sp_ks] = s;
-		const sps = sp_ks.map(([sp, _ks]) => sp);
-		const which_sp = candidate(sps), which = sp_ks.get(which_sp);
+		const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding
+		const which_sp = candidate(sps), which = sp_ks.filter((_k, sp) => list1eq(sp, which_sp)).first()[1];
+		console.log(which, which_sp);
 		this.setState({
 			at: which
 		});
@@ -139,7 +137,8 @@ export default class extends React.Component {
 					// spans :: [(Span, (SPANTY, FWEdge))]
 					if(this.state.gr.has(node)) {
 						const [[next_nk, next_cs_id], next_edges] = this.state.gr.get(node);
-						acc.push([next_nk.contents, [NK2ENV.get(next_nk.tag), null]]);
+						const nk_span = next_nk.tag === 'NKBind' ? next_nk.contents.contents : next_nk.contents;
+						acc.push([nk_span, [NK2ENV.get(next_nk.tag), null]]);
 						
 						switch(el.tag) {
 							case "ArgEdge":

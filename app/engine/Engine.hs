@@ -166,7 +166,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
               else map BindNamed fn_args -- pattern-match case
           keymerge n a b = trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a
       in flip const (ast, dflags, (grhss), (fn_args), next_store)
-        $ trace (ppr_safe dflags (fn_names, fn_keys))
+        -- $ trace (ppr_safe dflags (fn_names, fn_keys))
         $ (
             [] -- clear accumulated names
             , next_store
@@ -438,7 +438,7 @@ main = do
               | bk <- bks
               , pt <- pts
             ]
-          hollow_state = mconcat $ map (uncurry HollowGrState . second (IM.filter (not . null . snd) . gr2adjlist)) grs
+          hollow_state = mconcat $ map (uncurry HollowGrState . second gr2adjlist) grs
               -- for now, don't optimize the filenames out yet
               -- . Gr.emap (fmap (hollow_span srcfilemap . s_span))
               -- . Gr.nmap (nk_ctor &&& hollow_span srcfilemap . nk_span)

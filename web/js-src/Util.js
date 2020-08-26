@@ -1,4 +1,4 @@
-import { Map } from 'immutable'
+import { Map, Set } from 'immutable'
 
 class AssertionError extends Error {}
 export function assert(p, q) {
@@ -24,7 +24,7 @@ export function offsetTo(child, ancestor) {
 		return [0, 0];
 	}
 }
-export function span_contins(spa, spb) {
+export function span_contains(spa, spb) {
 	return
 		(spa[0][0] < spb[0][0] || spa[0][0] === spb[0][0] && spa[0][1] < spb[0][1]) 
 		&& (spa[1][0] < spb[1][0] || spa[1][0] === spb[1][0] && spa[1][1] < spb[1][1]) 
@@ -50,7 +50,8 @@ export function candidate(sps) { // Set Span -> Span
 			return s_;
 		}
 	}, s), Set());
-	return sps.subtract(big_sps).first(); // then pick one of the okay spans at random
+	console.log(sps.filter(sp => !any(big_sp => list1eq(big_sp, sp), big_sps)))
+	return sps.filter(sp => !any(big_sp => list1eq(big_sp, sp), big_sps)).reduce((_, b) => b, null);
 }
 
 export function any(f, t) {

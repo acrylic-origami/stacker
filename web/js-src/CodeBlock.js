@@ -104,8 +104,9 @@ export default class extends React.Component {
 		}
 		*/
 		this.state = {
-			src_snips: [], // [(Span, ?(Map Span k))] // intermediate state so that re-snipping and re-rendering is decoupled from the props upstairs changing inconsequentially
+			src_snips: [], // [(ColSpan, ?(Map Span k))] // intermediate state so that re-snipping and re-rendering is decoupled from the props upstairs changing inconsequentially
 			root_container_el: null,
+			hljs_result: null,
 		};
 		this.src_ref = React.createRef();
 	}
@@ -119,11 +120,15 @@ export default class extends React.Component {
 			this.update_src_snips();
 		}
 		if(diff.src_snips) {
-			requestAnimationFrame(e => {
-				hljs.highlightBlock(this.src_ref.current);
-				// const a = hljs.highlight('haskell', 'module A where')
-				// debugger;
-			}); // assume synchronous
+			console.log('??');
+			this.setState({
+				hljs_result: hljs.highlight('haskell', this.props.body)
+			});
+			// requestAnimationFrame(e => {
+			// 	hljs.highlightBlock(this.src_ref.current);
+			// 	// const a = hljs.highlight('haskell', 'module A where')
+			// 	// debugger;
+			// }); // assume synchronous
 		}
 	}
 	update_src_snips() {
@@ -133,6 +138,7 @@ export default class extends React.Component {
 			// const spans = this.state.st_at.map(e => this.state.st_gr.jsg_gr.get(e)[1])
 			// 	.filter(l => !!l.length)[0]
 			// 	.map(([_, sp]) => sp)
+			console.log(this.props.spans);
 			const span_chars = this.props.spans.map(
 				([span, k]) => {
 					const [_src, [ll, lc], [rl, rc]] = span;
@@ -184,6 +190,117 @@ export default class extends React.Component {
 			return D.promise;
 		}
 	}
+	
+	// function push_leaf(n, t) {
+	// 	if(typeof t !== 'string') {
+	// 		const is_deepest = true;
+	// 		for(const t_ of t[1]) {
+	// 			if(typeof t_ !== 'string')
+	// 				is_deepest = false;
+	// 		}
+	// 		if(is_deepest) {
+	// 			return [t[0], t[1].concat([n])];
+	// 		}
+	// 		else {
+	// 			return [t[0], t[1].map(t_ => push_leaf(n, t_))];
+	// 		}
+	// 	}
+	// 	else {
+	// 		return t;
+	// 	}
+	// }
+	// function rt(t) {
+	// 	// t :: KTree := string | (kind: String, children: [KTree])
+	// 	return <span className={`hljs-${t.kind}`}>{t.children.map(t_ => typeof t_ === 'string' ? t_ : rt(t_))}</span>;
+	// }
+	
+	render_highlight() {
+		const mksnip = (txt, sp, sp_ks) => {
+			if(sp_ks != null)
+				return <Snip
+					onClick={this.props.onSnipClick}
+					onMouseEnter={this.snipHoverHandler}
+					onMouseLeave={this.snipHoverHandler}
+					ks={sp_ks}
+					key={sp.toString()}
+					className={
+						sp_ks.has(this.state.snip_focuses)
+						? 'focused'
+						: ''
+					}
+					root={this.state.root_container_el}
+					scroll_idx={this.props.should_scroll_to(sp_ks)} // just 0 or 1 for now: include re-focusing as needed
+				>
+					{ this.props.wrap_snip(txt, sp_ks) }
+				</Snip>;
+			else
+				return txt;
+		}
+		function rt(tree) {
+			function rt_(t, n) {
+				// t :: KTree := string | (kind: String, children: [KTree])
+				if(typeof t === 'string')
+					return [t, n + t.length];
+				else {
+					const [eles, n_] = t.children.reduce(([acc, n_], t_) => {
+						const [ele, n__] = rt_(t_, n_);
+						acc.push(ele);
+						return [acc, n__];
+					}, [[], n]);
+					return [<span className={t.kind && `hljs-${t.kind}`} key={n}>{eles}</span>, n_];
+				}
+			}
+			return rt_(tree, 0)[0];
+		}
+		
+		if(this.state.src_snips !== null && this.state.hljs_result !== null) {
+			const r = (hl_t, snip_idx, n) => {
+				// KTree := string | { kind: String, children: [KTree] }
+				// KTree -> Int -> Int -> ([KTree], Int)
+				if(typeof hl_t === 'string') {
+					// console.log(this.state.src_snips, snip_idx);
+					const rightdist = this.state.src_snips[snip_idx][0][1] - n;
+					if(rightdist <= hl_t.length) {  // TODO check openness of span boundaries
+						// console.log(snip_idx, next_n, this.state.src_snips[snip_idx]);
+						// need to cut this tag in half
+						const next = r(hl_t.slice(rightdist), snip_idx + 1, this.state.src_snips[snip_idx][0][1]);
+						// const partial_t_ = push_leaf(, partial_t);
+						const here = hl_t.slice(0, rightdist); // mksnip(rt(partial_t_));
+						next[0].unshift(here); // push new tag to start
+						return next;
+					}
+					else {
+						return [[hl_t], [snip_idx, n + hl_t.length]];
+					}
+				}
+				else {
+					let snip_idx_ = snip_idx;
+					let n_ = n;
+					const root_ctor = () => ({ kind: hl_t.kind, children: [] });
+					const roots = [root_ctor()];
+					for(const c of hl_t.children) {
+						const next = r(c, snip_idx_, n_);
+						const next_trees = next[0];
+						[snip_idx_, n_] = next[1];
+						for(let t = 0; t < next_trees.length; t++) {
+							if(t > 0)
+								roots.push(root_ctor());
+							
+							roots[roots.length - 1].children.push(next_trees[t]);
+						}
+					}
+					return [roots, [snip_idx_, n_]];
+				}
+			}
+			const [ts, _] = r(this.state.hljs_result.emitter.root, 0, 0);
+			const snips = [];
+			for(let i = 0; i < ts.length; i++)
+				snips.push(mksnip(rt(ts[i]), this.state.src_snips[i][0], this.state.src_snips[i][1]));
+			
+			return <span>{snips.map((ele, k) => <span key={k}>{ele}</span>)}</span>;
+		}
+		else return null;
+	}
 	snipHoverHandler = (e, sp_ks) => {
 		console.log(e, sp_ks);
 		switch(e.type) {
@@ -204,30 +321,8 @@ export default class extends React.Component {
 	render = () => 
 		<div ref={this.rootRefChangeHandler} id="src_container">
 			<pre>
-				<code ref={this.src_ref} id="src_root" className="language-haskell">
-					{
-						this.state.src_snips.map(([sp, sp_ks]) =>
-								sp_ks === null
-									? this.props.body.slice(sp[0], sp[1])
-									: <span><span onClick={e => console.log('????')}>???????</span><Snip
-										onClick={this.props.snipClickHandler}
-										onMouseEnter={this.snipHoverHandler}
-										onMouseLeave={this.snipHoverHandler}
-										ks={sp_ks}
-										key={sp.toString()}
-										className={
-											sp_ks.has(this.state.snip_focuses)
-											? 'focused'
-											: ''
-										}
-										root={this.state.root_container_el}
-										scroll_idx={this.props.should_scroll_to(sp_ks)} // just 0 or 1 for now: include re-focusing as needed
-									>
-										<div onClick={e => console.log('????')}>??????</div>
-										{ this.props.wrap_snip(this.props.body.slice(sp[0], sp[1]), sp_ks) /* note that having arbitrary wrapping tags is fine wrt highlighting because highlight.js is smart and can break up its highlight tags across the tags we put in if needed */ }
-									</Snip></span>
-							)
-					}
+				<code ref={this.src_ref} id="src_root" className="language-haskell hljs">
+					{ this.render_highlight() }
 				</code>
 			</pre>
 		</div>

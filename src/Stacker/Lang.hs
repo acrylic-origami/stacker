@@ -249,13 +249,13 @@ instance Monoid (HollowGrState a) where
   mempty = HollowGrState mempty mempty
   
 instance ToJSON (HollowGrState a) where
-  toJSON (HollowGrState a b) = Aeson.object [
-      "at" .= a,
-      "gr" .= b
+  toJSON (HollowGrState at gr) = Aeson.object [
+      "at" .= at,
+      "gr" .= gr
     ]
 
 gr2adjlist :: Gr.Gr a b -> AdjList a b
-gr2adjlist gr = Gr.ufold (\c m -> IM.insert (Gr.node' c) (Gr.lab' c, Gr.lsuc' c) m) mempty gr
+gr2adjlist gr = Gr.ufold (\c -> IM.insert (Gr.node' c) (Gr.lab' c, Gr.lsuc' c)) mempty gr -- if null $ Gr.neighbors' c then id else 
   -- M.fromList $ map ((id &&& (Gr.lab' &&& map (first k) . Gr.lsuc') . Gr.context gr)) (Gr.nodes gr)
 
 -- instance Semigroup JSGraph where
