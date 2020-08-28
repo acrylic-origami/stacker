@@ -33,7 +33,6 @@ dependencies:
 - lens
 - mtl
 - fgl
-- bimap
 - bytestring
 - utf8-string
 - aeson

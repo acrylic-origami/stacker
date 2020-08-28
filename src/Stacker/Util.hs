@@ -2,8 +2,13 @@
 module Stacker.Util where
 
 import Control.Arrow ( (***), (&&&), first, second )
+import Control.Lens ( lens, sets, to, Setter(..), Setter'(..), Lens' )
+import Control.Lens.Operators ( (^.), (%~), (.~) )
+import Data.Function ( (&) )
+
 import SrcLoc
 import Name ( nameSrcSpan )
+import FastString ( FastString(..) )
 
 import qualified Data.SegmentTree as STree
 import qualified Data.SegmentTree.Interval as STInterval
@@ -76,7 +81,7 @@ ivl_payloads = map_loc_ivl l_payload
 ivl_locs = map_loc_ivl l_loc
 
 segfind :: Segs a -> Span -> [a]
-segfind (SegFlat l) sp = map s_payload $ filter ((`containsSpan` sp) . s_span) l
+segfind (SegFlat l) sp = map _s_payload $ filter ((`containsSpan` sp) . _s_span) l
 segfind (SegTree t) sp = ivl_payloads $ STree.subintervalQuery t (span2interval sp)
 
 gr_prettify :: (Gr.DynGraph gr, Show a, Show b) => (c -> a) -> (d -> b) -> gr c d -> String
@@ -100,7 +105,7 @@ ppr_ d = putStrLn . ppr_safe d
 
 ppr_nk :: DynFlags -> NodeKey a -> String 
 ppr_nk dflags = O.showSDoc dflags . ppr_nk' where
-  ppr_nk' (NKApp ag) = O.text "App @" O.<> (ppr $ s_span ag)
+  ppr_nk' (NKApp ag) = O.text "App @" O.<> (ppr $ _s_span ag)
   ppr_nk' (NKBind (BindLam sp)) = O.text "Lam @" O.<> ppr sp
   ppr_nk' (NKBind (BindNamed (Spand sp (Right n)))) = O.text "BindNamed " O.<> O.quotes (ppr n) <+> O.text "@" O.<> ppr sp
   ppr_nk' (NKBind (BindNamed (Spand sp (Left m)))) = O.text "Module " O.<> O.quotes (ppr m) <+> O.text "@" O.<> ppr sp
@@ -121,11 +126,19 @@ maplast _ [] = []
 maplast f (a:[]) = (f a):[]
 maplast f (a:l) = a:(maplast f l)
 
-map_loc_file f l = mkRealSrcLoc (f $ srcLocFile l) (srcLocLine l) (srcLocCol l)
-map_span_file f sp =
-  let l = realSrcSpanStart sp
-      r = realSrcSpanEnd sp
-  in mkRealSrcSpan (map_loc_file f l) (map_loc_file f r)
+loc_file :: Lens' RealSrcLoc FastString
+loc_file = lens get' set' where
+  get' l = srcLocFile l
+  set' l f =
+    mkRealSrcLoc f (srcLocLine l) (srcLocCol l)
+    
+span_file :: Lens' Span FastString
+span_file = lens get' set' where
+  get' sp = realSrcSpanStart sp ^. loc_file
+  set' sp f =
+    let l = realSrcSpanStart sp
+        r = realSrcSpanEnd sp
+    in mkRealSrcSpan (l & loc_file .~ f) (r & loc_file .~ f)
 
 snip_src :: Span -> [String] -> [String]
 snip_src sp ls =

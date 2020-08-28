@@ -22,6 +22,7 @@ import DynFlags ( DynFlags, defaultDynFlags )
 import GHC.Paths (libdir)
 
 -- data/control
+import Data.Coerce ( coerce )
 import Data.Bitraversable ( bisequence )
 import Data.Bifunctor ( bimap )
 import Data.Foldable ( fold, asum )
@@ -177,7 +178,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                           then M.unionWithKey keymerge
                             $ M.fromList
                             $ map (, head fn_keys)
-                            $ filter (is_var_name . s_payload)
+                            $ filter (is_var_name . _s_payload)
                             $ unique fn_args
                           else id
                       )
@@ -209,7 +210,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                       else fromMaybe mempty $ mk_pt_store' False . (next_ast_stack,) <$> listToMaybe (nodeChildren ast) -- watching out for EmptyCase
                  bindees :: [LIdentifier]
                  (bindees, (next_names, next_store)) =
-                    first (filter (is_var_name . s_payload)) $
+                    first (filter (is_var_name . _s_payload)) $
                     if is_this_bind
                       then (
                           map (uncurry (flip Spand))
@@ -235,7 +236,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
           | has_node_type ["HsExpr"] ast
           -> let (next_ags, next_store) = dig True
                  this_names = getShallowReferences ast
-                 next_names' = concatMap s_payload next_ags <> this_names -- throw out locs of direct descendants: they're part of _this_ app group now
+                 next_names' = concatMap _s_payload next_ags <> this_names -- throw out locs of direct descendants: they're part of _this_ app group now
                  next_ag = Spand (nodeSpan ast) next_names'
             in (
                 [next_ag] -- pass this up to a bind to make deps, invariant that it doesn't hit another app thing (see the top-level `otherwise` clause)
@@ -264,7 +265,7 @@ pt_search dflags (PtStore {..}) cs_segs =
   let state_step :: [NodeKey a] -> (M.Map (NodeKey a) (Gr.Node, Spand Prof.CostCentre), Gr.Node) -> (M.Map (NodeKey a) (Gr.Node, Spand Prof.CostCentre), Gr.Node)
       state_step [] t = t
       state_step l (a, s) =
-        let (l', cs) = unzip $ mapMaybe (bisequence . (Just &&& find_min_cs . nk_span)) l
+        let (l', cs) = unzip $ mapMaybe (bisequence . (Just &&& find_min_cs . (^.nk_span))) l
         in (
             M.union a $ M.fromList $ zip l' (zip [s..] cs)
             , s + length l'
@@ -284,14 +285,14 @@ pt_search dflags (PtStore {..}) cs_segs =
       -- merge_decomps = fmap $ foldr (uncurry bimap . ((<>) *** flip (foldr Gr.insEdge) . Gr.labEdges)) r0  -- egregiously wasteful; think of a better way
       find_min_cs :: Span -> Maybe (Spand Prof.CostCentre)
       find_min_cs sp = case segfind cs_segs sp of
-        l@(_:_) -> Just $ minimumBy (curry $ ([LT, GT] !!) . fromEnum . uncurry containsSpan . both s_span) l -- nominal minimum sized span (could be wrong because )
+        l@(_:_) -> Just $ minimumBy (curry $ ([LT, GT] !!) . fromEnum . uncurry containsSpan . both _s_span) l -- nominal minimum sized span (could be wrong because )
         [] -> Nothing
       
       with_ags :: ([LIdentifier] -> NodeState a) -> [AppGroup] -> NodeState a
       with_ags f ags = do
         visited <- get
         let ags' = S.fromList ags S.\\ visited
-            idents = unique $ concatMap s_payload $ S.toList ags'
+            idents = unique $ concatMap _s_payload $ S.toList ags'
         put $ S.union visited ags'
         f idents
       
@@ -302,7 +303,7 @@ pt_search dflags (PtStore {..}) cs_segs =
           then return mempty
           else do
             put $ S.insert ag visited
-            mconcat <$> mapM f (s_payload ag)
+            mconcat <$> mapM f (_s_payload ag)
       
       -- pt_search' :: Bool -> LIdentifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
       pt_search' :: Either BindKey LIdentifier -> NodeState a
@@ -314,7 +315,7 @@ pt_search dflags (PtStore {..}) cs_segs =
                           concat
                           $ (maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? fn_ident)
                           <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident)
-                          , find_min_cs $ s_span fn_ident
+                          , find_min_cs $ _s_span fn_ident
                         )
                       BindLam fn_span -> (
                           segfind (_ps_app_groups ^. ag_span_map) fn_span
@@ -322,13 +323,13 @@ pt_search dflags (PtStore {..}) cs_segs =
                         )
                 in (
                     [
-                      ((NKApp ag, BindEdge $ bk_span bk), with_ag (pt_search' . Right) ag)
+                      ((NKApp ag, BindEdge $ bk ^. bk_span), with_ag (pt_search' . Right) ag)
                       | ag <- ags
                     ]
                       -- $ M.toList $ M.restrictKeys nodes (S.fromList $ map NKApp )
                     , m_cs'
                   )
-              Right ident -> (, find_min_cs $ s_span ident) $
+              Right ident -> (, find_min_cs $ _s_span ident) $
                   if 
                      | Just (bnd, ags) <- (_ps_binds ^. bg_bnd_app_map) !?~ ident
                      -> (
@@ -368,7 +369,7 @@ pt_search dflags (PtStore {..}) cs_segs =
   in second (Gr.mkGraph (map (\(nk_el, (n, sp_cs)) ->
         (n, (
             nk_el
-            , Prof.costCentreNo $ s_payload sp_cs
+            , Prof.costCentreNo $ _s_payload sp_cs
           ))
       ) $ M.toList nodes))
     . (`evalState` mempty) . pt_search'
@@ -409,7 +410,7 @@ main = do
           -- bound'' :: STree.STree [STInterval.Interval (Locd ())] (Locd ())
           -- bound'' = STree.fromList $ concatMap (map (seg2intervalish . (bindkey_span &&& const ())) . M.elems . (^. ps_fns)) pts
           
-          bound_fns' = concatMap (map seg2intervalish . map (uncurry Spand . (s_span &&& id)) . M.keys . (^. (ps_binds . bg_bnd_app_map))) pts
+          bound_fns' = concatMap (map seg2intervalish . map (uncurry Spand . (_s_span &&& id)) . M.keys . (^. (ps_binds . bg_bnd_app_map))) pts
           bound_fns :: STree.STree [STInterval.Interval (Locd LIdentifier)] (Locd LIdentifier)
           bound_fns = STree.fromList bound_fns'
           
@@ -431,7 +432,7 @@ main = do
                 | (_targn, targ_span) <- targs
                 , pt <- pts
                 , idents <- segfind (pt ^. ps_app_groups ^. ag_span_map) targ_span
-                , ident <- s_payload idents
+                , ident <- _s_payload idents
               ])
           grs = [
               pt_search dflags pt targ_segs bk
@@ -439,16 +440,35 @@ main = do
               , pt <- pts
             ]
           hollow_state = mconcat $ map (uncurry HollowGrState . second gr2adjlist) grs
+          (filemap, unfile_gr_state) =
+            hollow_state & (
+                st_gr $ unAdjList $ 
+                  first (M.fromList . (`zip` (map (fsLit . show) [0..])) . S.toList) .
+                  IM.foldrWithKey (\k ((nk, cs), edges) (fm, ufs) ->
+                      let unfile_node = (
+                              (
+                                  nk & (nk_span . span_file) %~ (filemap M.!)
+                                  , cs
+                                )
+                              , map (second (el_spans %~ map (span_file %~ (filemap M.!)))) edges -- definitely a bette way to do this with the right lens combinators
+                            )
+                          node_files =
+                            [nk ^. (nk_span . span_file)]
+                            <> concatMap ((^.(el_spans . L.to (map (^.span_file)))) . snd) edges
+                      in (foldr S.insert fm node_files, IM.insert k unfile_node ufs)
+                    ) mempty
+              )
+          unfile_state = unfile_gr_state & st_at %~ map (second (el_spans %~ map (span_file %~ (filemap M.!))))
               -- for now, don't optimize the filenames out yet
-              -- . Gr.emap (fmap (hollow_span srcfilemap . s_span))
-              -- . Gr.nmap (nk_ctor &&& hollow_span srcfilemap . nk_span)
+              -- . Gr.emap (fmap (hollow_span srcfilemap . _s_span))
+              -- . Gr.nmap (nk_ctor &&& hollow_span srcfilemap . (^.nk_span))
               -- 
-              -- srcfilelist = unique $ concatMap (map (unpackFS . srcSpanFile) . uncurry (<>) . (map nk_span . Gr.labNodes &&& map s_span . Gr.labEdges)) grs -- collect all SrcSpan files and map them
+              -- srcfilelist = unique $ concatMap (map (unpackFS . srcSpanFile) . uncurry (<>) . (map (^.nk_span) . Gr.labNodes &&& map _s_span . Gr.labEdges)) grs -- collect all SrcSpan files and map them
               -- srcfilemap = M.fromList $ zip srcfilelist [0..]
       in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest) -- const (putStrLn $ unlines $ head $ M.elems $ lined_srcs) 
         -- putStrLn $ ppr_safe dflags bks
         -- putStrLn $ ppr_safe dflags bound_fns'
-        writeFile "static/gr.json" (UBL.toString $ Aeson.encode hollow_state)
+        writeFile "static/gr.json" (UBL.toString $ Aeson.encode (unfile_state, filemap))
         const (pure ()) $ do
           -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
           -- putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
@@ -461,7 +481,7 @@ main = do
           -- putStrLn $ Tr.drawForest $ fmap (show . snd) <$> targ_ts
           -- ppr_ dflags $ map (S.fromList . concat . M.elems . _ag_ident_map . _ps_app_groups) pts
           -- -- putStrLn $ ppr_safe dflags bound -- <$> (bound M.!? targs)
-          -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
+          -- print $ sum $ map (length . filter id . xselfmap (curry $ not . uncurry (||) . (uncurry (==) &&& (S.null . uncurry (S.\\) . both (S.fromList . _s_payload)))) . concat . M.elems . (^. (ps_app_groups . ag_ident_map))) pts
           -- const (pure ()) $ putStrLn $ unlines $ map (\(n, gr) ->
           --     unlines $ map (uncurry ((++) . (++"->")) . both (fromMaybe "" . fmap (ppr_nk dflags) . fst . Gr.lab gr)) $ unique $ Gr.edges gr
           --   ) grs
@@ -473,11 +493,11 @@ main = do
                       . (
                           fmap (uncurry (<>) . (
                               (<>" ") . nk_ctor . fst
-                              &&& concat . intersperse "; " . map (dropWhile (==' ')) . uncurry snip_src . first nk_span)
+                              &&& concat . intersperse "; " . map (dropWhile (==' ')) . uncurry snip_src . first (^.nk_span))
                             )
                           . ((bisequence . (
                               Just
-                              &&& (lined_srcs M.!?) . unpackFS . srcSpanFile . nk_span
+                              &&& (lined_srcs M.!?) . unpackFS . srcSpanFile . (^.nk_span)
                             )) . fst . Gr.lab')
                           =<<
                         ) . fst . flip Gr.match gr

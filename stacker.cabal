@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a075acf1e45c253fcc3216c5a28490c46e4fe47ee680714183151d2ba438da2b
+-- hash: 9a71ff18da64da16b022c5e12c353f62c32062a041c6cb1f2ef0ffa7f89e736e
 
 name:           stacker
 version:        0.1.0.0
@@ -39,7 +39,6 @@ library
   build-depends:
       aeson
     , base >=4.7 && <5
-    , bimap
     , bytestring
     , containers
     , directory
@@ -66,7 +65,6 @@ executable stacker-exe
   build-depends:
       aeson
     , base >=4.7 && <5
-    , bimap
     , bytestring
     , containers
     , directory
@@ -94,7 +92,6 @@ executable stacker-server
   build-depends:
       aeson
     , base >=4.7 && <5
-    , bimap
     , bytestring
     , containers
     , directory

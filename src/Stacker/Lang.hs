@@ -1,7 +1,9 @@
-{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings, ViewPatterns, NamedFieldPuns, RecordWildCards, TemplateHaskell, LambdaCase, TupleSections, Rank2Types, MultiWayIf, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, DeriveFunctor, DeriveFoldable #-}
 module Stacker.Lang where
 
-import Control.Lens ( makeLenses )
+import Control.Lens ( makeLenses, lens, Lens(..), Lens'(..) )
+import Control.Lens.Operators ( (^.), (%~), (.~) )
+import Data.Function ( (&) )
 import qualified Control.Lens.Operators as LOp
 import GHC.Generics
 import qualified FastString as FS
@@ -15,10 +17,10 @@ import Data.List.NonEmpty ( NonEmpty(..) )
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
-import qualified Data.Bimap as BM
 import qualified Data.Tree as Tr
 import Data.List ( intersect )
 import Control.Monad.State ( State(..) )
+import qualified Data.Bifunctor as BF
 
 import qualified GHC.Prof as Prof
 
@@ -54,9 +56,10 @@ instance Functor Locd where
   f `fmap` (Locd l a) = Locd l (f a)
 
 data Spand a = Spand {
-  s_span :: RealSrcSpan,
-  s_payload :: a
+  _s_span :: Span,
+  _s_payload :: a
 } deriving Show
+makeLenses ''Spand
 
 instance Eq a => Eq (Spand a) where
   (Spand _ l) == (Spand _ r) = l == r
@@ -82,8 +85,13 @@ data AppGroups a = AppGroups {
 makeLenses ''AppGroups
 
 data BindKey = BindNamed LIdentifier | BindLam Span deriving (Eq, Ord)
-bk_span (BindLam sp) = sp
-bk_span (BindNamed b) = s_span b
+bk_span :: Lens' BindKey Span
+bk_span = lens get' set' where
+  get' (BindLam sp) = sp
+  get' (BindNamed b) = b ^. s_span
+  
+  set' (BindLam _) sp = BindLam sp
+  set' (BindNamed b) sp = BindNamed $ b & s_span .~ sp
 
 type IdentMap a = M.Map LIdentifier [(Span, IdentifierDetails a)]
 data BindGroups = BindGroups {
@@ -107,10 +115,17 @@ makeLenses ''PtStore
 
 data NodeKey a = NKApp AppGroup | NKBind BindKey deriving (Eq, Ord)
 
-nk_span :: NodeKey a -> Span
-nk_span (NKApp ag) = s_span ag
-nk_span (NKBind (BindNamed lident)) = s_span lident
-nk_span (NKBind (BindLam sp)) = sp
+nk_span :: Lens' (NodeKey a) Span
+nk_span = lens spget spset where
+  spget (NKApp ag) = ag ^. s_span
+  spget (NKBind (BindNamed lident)) = lident ^. s_span
+  spget (NKBind (BindLam sp)) = sp
+  
+  spset (NKApp ag) sp = NKApp $ (ag & s_span .~ sp)
+  spset (NKBind (BindNamed lident)) sp = NKBind $ BindNamed $ (lident & s_span .~ sp)
+  spset (NKBind (BindLam _sp)) sp = NKBind $ BindLam sp
+  
+  
 -- type NodeStore a = BM.Bimap (NodeKey a) Node
 
 -- data NodeStore a = NodeStore {
@@ -181,6 +196,17 @@ data EdgeLabel =
   | AppEdge LIdentifier LIdentifier -- loc of source, loc of target binding
   | BindEdge Span -- just the bindee location itself
   -- the name location that links the nodes together (e.g. a symbol within an AppGroup + its binding, the arg )
+
+-- asymmetric lens? hmm...
+el_spans :: Lens' EdgeLabel [Span]
+el_spans = lens spget spset where
+  spget (ArgEdge a b) = [a ^. s_span, b ^. s_span]
+  spget (AppEdge a b) = [a ^. s_span, b ^. s_span]
+  spget (BindEdge sp) = [sp]
+  spset (ArgEdge a b) (asp:bsp:[]) = ArgEdge (a & s_span .~ asp) (b & s_span .~ bsp)
+  spset (AppEdge a b) (asp:bsp:[]) = AppEdge (a & s_span .~ asp) (b & s_span .~ bsp)
+  spset (BindEdge _sp) [sp] = BindEdge sp
+
 type NodeGr a = Gr.Gr ((NodeKey a, Int)) EdgeLabel
 type NodeState a = State (S.Set AppGroup) ([(Gr.Node, EdgeLabel)], [Gr.LEdge EdgeLabel])
 
@@ -234,13 +260,31 @@ instance ToJSON EdgeLabel where
       , (defContentsField, case l of { ArgEdge a b -> toJSON (a, b); AppEdge a b -> toJSON (a, b); BindEdge a -> toJSON a })
     ]
 
-type AdjList a b = IM.IntMap (a, [(Gr.Node, b)]) -- [(k, (a, [(k, b)]))]
+newtype AdjList a b = AdjList {
+  _unAdjList :: (IM.IntMap (a, [(Gr.Node, b)]))
+} deriving (Functor, Foldable) -- [(k, (a, [(k, b)]))]
+makeLenses ''AdjList
+
+instance Semigroup (AdjList a b) where
+  (AdjList l) <> (AdjList r) =
+    let (lmax, _) = IM.findMax l
+    in if IM.null l
+      then AdjList r
+      else AdjList $ IM.foldrWithKey (curry $ uncurry IM.insert . first (+(lmax + 1))) l r
+
+instance Monoid (AdjList a b) where
+  mempty = AdjList mempty
+
+instance (ToJSON a, ToJSON b) => ToJSON (AdjList a b) where
+  toJSON (AdjList m) = toJSON m
+  
 -- type SrcFileMap = M.Map FilePath Int
 data HollowGrState a = HollowGrState {
-  st_at :: [(Gr.Node, EdgeLabel)]
+  _st_at :: [(Gr.Node, EdgeLabel)]
   -- , jsg_sourcelist :: [String]
-  , st_gr :: AdjList (NodeKey a, Int) EdgeLabel
+  , _st_gr :: AdjList (NodeKey a, Int) EdgeLabel
 }
+makeLenses ''HollowGrState
   
 instance Semigroup (HollowGrState a) where
   (HollowGrState la lb) <> (HollowGrState ra rb) = HollowGrState (la <> ra) (lb <> rb)
@@ -254,8 +298,15 @@ instance ToJSON (HollowGrState a) where
       "gr" .= gr
     ]
 
+instance ToJSON FS.FastString where
+  toJSON f = toJSON $ FS.unpackFS f
+
+
+instance ToJSONKey FS.FastString where
+  toJSONKey = Aeson.Types.toJSONKeyText (E.decodeUtf8 . FS.fs_bs)
+  
 gr2adjlist :: Gr.Gr a b -> AdjList a b
-gr2adjlist gr = Gr.ufold (\c -> IM.insert (Gr.node' c) (Gr.lab' c, Gr.lsuc' c)) mempty gr -- if null $ Gr.neighbors' c then id else 
+gr2adjlist gr = Gr.ufold (\c -> if null $ Gr.neighbors' c then id else (<> AdjList (IM.singleton (Gr.node' c) (Gr.lab' c, Gr.lsuc' c)))) mempty gr -- 
   -- M.fromList $ map ((id &&& (Gr.lab' &&& map (first k) . Gr.lsuc') . Gr.context gr)) (Gr.nodes gr)
 
 -- instance Semigroup JSGraph where
