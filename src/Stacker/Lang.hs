@@ -336,7 +336,14 @@ instance ToJSONKey FS.FastString where
   toJSONKey = Aeson.Types.toJSONKeyText (E.decodeUtf8 . FS.fs_bs)
   
 gr2adjlist :: Gr.Gr a b -> AdjList a b
-gr2adjlist gr = Gr.ufold (\c -> if null $ Gr.neighbors' c then id else (<> AdjList (IM.singleton (Gr.node' c) (Gr.lab' c, Gr.lsuc' c)))) mempty gr -- 
+gr2adjlist gr =
+  -- traceShow (length . Gr.neighbors' <$> (fst $ Gr.match 992 gr)) $ 
+  AdjList $ foldr (\(n, l) ->
+      let (Just c, _) = Gr.match n gr
+      in if null $ Gr.neighbors' c
+        then id
+        else IM.insert n (l, Gr.lsuc' c)
+    ) mempty (Gr.labNodes gr) -- 
   -- M.fromList $ map ((id &&& (Gr.lab' &&& map (first k) . Gr.lsuc') . Gr.context gr)) (Gr.nodes gr)
 
 -- instance Semigroup JSGraph where
