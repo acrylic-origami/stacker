@@ -10,15 +10,39 @@ import { Set, Map } from 'immutable'
 hljs.registerLanguage('haskell', hs);
 
 function ivl_split(t) {
+	// ISpan 
+	
 	// create disjoint open intervals with pooled keys
 	// accept list with two intervals, for fast identification of disjoint
 	// please disregard how much this function sucks
 	const [a, b] = t;
 	const ck = a[2].concat(b[2]);
 	if(a[0] === b[0] && a[1] === b[1]) {
+		// equal
 		return [[a[0], a[1], ck]];
 	}
+	else if(a[0] > b[1] && a[1] > b[1] || a[0] < b[0] && a[1] < b[0]) {
+		// disjoint
+		return t;
+	}
+	else if(a[0] > b[0] && a[1] < b[1]) {
+		// a < b
+		return [
+			[b[0], a[0], b[2]],
+			[a[0], a[1], ck],
+			[a[1], b[1], b[2]]
+		]
+	}
+	else if(a[0] < b[0] && a[1] > b[1]) {
+		// a > b
+		return [
+			[a[0], b[0], a[2]],
+			[b[0], b[1], ck],
+			[b[1], a[1], a[2]]
+		]
+	}
 	else if(a[0] === b[0]) {
+		// left aligned
 		if(a[1] < b[1]) {
 			return [
 				[a[0], a[1], ck],
@@ -28,41 +52,41 @@ function ivl_split(t) {
 		else {
 			return [
 				[b[0], b[1], ck],
-				[b[1], a[1], b[2]]
+				[b[1], a[1], a[2]]
 			];
 		}
 	}
 	else if(a[1] === b[1]) {
-		if(a[1] < b[1]) {
+		// right aligned
+		if(a[0] < b[0]) {
 			return [
-				a,
-				[a[1], b[1], ck]
+				[a[0], b[0], a[2]],
+				[b[0], b[1], ck]
 			];
 		}
 		else {
 			return [
-				b,
-				[b[1], a[1], ck]
+				[b[0], a[0], b[2]],
+				[a[0], a[1], ck]
 			];
 		}
 	}
-	else if(a[0] > b[1] && a[1] > b[1] || a[0] < b[0] && a[1] < b[0]) {
-		// disjoint
-		return t;
-	}
-	else if(a[0] < b[0]) {
-		return [
-			a,
-			[b[0], a[1], ck],
-			b
-		]
-	}
 	else {
-		return [
-			b,
-			[a[0], b[1], ck],
-			a
-		]
+		// nonempty intersect, neither subset
+		if(a[0] < b[0]) {
+			return [
+				[a[0], b[0], a[2]],
+				[b[0], a[1], ck],
+				[a[1], b[1], b[2]]
+			]
+		}
+		else {
+			return [
+				[b[0], a[0], b[2]],
+				[a[0], b[1], ck],
+				[b[1], a[1], a[2]]
+			]
+		}
 	}
 }
 
@@ -146,24 +170,31 @@ export default class extends React.Component {
 			const T = new IntervalTree();
 			for(let i = 0; i < span_chars.length; i++) {
 				const hits = T.search(span_chars[i].slice(0, 2), ((v, k) => ({ key: k, value: v })));
-				const Q = [span_chars[i]];
+				let QQ = [span_chars[i]];
 				for(const hit of hits) {
-					for(let _ = 0; _ < Q.length; _++) {
-						Q.push.apply(Q, ivl_split([Q.shift(), [hit.key.low, hit.key.high, hit.value]]));
+					let Q = QQ;
+					QQ = [];
+					const listhit = [hit.key.low, hit.key.high, hit.value];
+					for(const q of Q) {
+						const a = ivl_split([q, listhit]);
+						// console.log([JSON.stringify(a), JSON.stringify(q), JSON.stringify(hit)].join('\n\n'));
+						QQ.push.apply(QQ, a);
+						
 						// if(u !== t) {
 						// }
 						// else {
 						// 	Q.push(t[0]); // optimize for the fact the tree should already be disjoint
 						// }
 					}
+					QQ = Set(QQ).toArray();
 				}
-				// debugger;
 				for(const hit of hits)
 					T.remove(hit.key);
-				for(const q of Q)
+				for(const q of QQ)
 					T.insert(q.slice(0, 2), q[2]);
 			}
 			const I = T.items; // [{ key: (Int, Int), value: [(Span, k)] }]
+			// console.log(span_chars, I.map(({ key }) => key));
 			const D = Q.defer();
 			if(I.length > 0) {
 				I.sort((l, r) => l.key[0] > r.key[0]); // sort intervals in ascending order
@@ -300,7 +331,7 @@ export default class extends React.Component {
 		else return null;
 	}
 	snipHoverHandler = (e, sp_ks) => {
-		console.log(e, sp_ks);
+		// console.log(e, sp_ks);
 		switch(e.type) {
 			case 'mouseenter':
 				const sps = sp_ks.keySeq().toSet();

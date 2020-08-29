@@ -13,7 +13,7 @@ body, html {
 #src_root {
 	position:relative;
 	display:block;
-	font-family: 'Source Code Pro', monospace;
+	font-family: monospace;
 	font-size:0.7em;
 }
 #scc_section {
@@ -23,7 +23,6 @@ body, html {
 		margin:0;
 		padding:0.4em;
 		font-size:1em;
-		background-color:;
 	}
 	#scc_select {
 		overflow-x:scroll;

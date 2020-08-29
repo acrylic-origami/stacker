@@ -50,7 +50,6 @@ export function candidate(sps) { // Set Span -> Span
 			return s_;
 		}
 	}, s), Set());
-	console.log(sps.filter(sp => !any(big_sp => list1eq(big_sp, sp), big_sps)))
 	return sps.filter(sp => !any(big_sp => list1eq(big_sp, sp), big_sps)).reduce((_, b) => b, null);
 }
 

@@ -81,7 +81,8 @@ export default class extends React.Component {
 		
 		const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding
 		const which_sp = candidate(sps), which = sp_ks.filter((_k, sp) => list1eq(sp, which_sp)).first()[1];
-		console.log(which, which_sp);
+		console.log(which_sp, which, sps);
+		debugger;
 		this.setState({
 			at: which
 		});
@@ -103,7 +104,6 @@ export default class extends React.Component {
 			at_file = at_file[0]; // ArgEdge or AppEdge, a list of edges. need to go one further in
 		
 		const at_path = this.state.filelist[parseInt(at_file)]; // this.state.gr.jsg_gr.get(this.state.at[0]).key.span.path;
-		console.log(at_path, at_file, this.state.filelist);
 		if(this.state.src === null && at_path != null || this.state.src !== null && at_path !== this.state.src.path) {
 			const stash_req_idx = this.state.src_req_idx;
 			fetch(`/f?n=${encodeURIComponent(at_path.replace('lib/', '').replace('.hs', '.hie'))}`)
@@ -146,6 +146,7 @@ export default class extends React.Component {
 					// spans :: [(Span, (SPANTY, FWEdge))]
 					if(this.state.gr.has(node)) {
 						const [[next_nk, next_cs_id], next_edges] = this.state.gr.get(node);
+						console.log(this.state.gr.get(node));
 						const nk_span = next_nk.tag === 'NKBind' ? next_nk.contents.contents : next_nk.contents;
 						acc.push([nk_span, [NK2ENV.get(next_nk.tag), null]]);
 						
