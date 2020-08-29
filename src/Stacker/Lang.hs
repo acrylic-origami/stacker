@@ -2,6 +2,7 @@
 module Stacker.Lang where
 
 import Control.Lens ( makeLenses, lens, Lens(..), Lens'(..) )
+import qualified Control.Lens as L
 import Control.Lens.Operators ( (^.), (%~), (.~) )
 import Data.Function ( (&) )
 import qualified Control.Lens.Operators as LOp
@@ -42,6 +43,8 @@ import qualified Data.Aeson.Types as Aeson.Types
 
 import Outputable ( Outputable(..), (<+>), ($+$) )
 import qualified Outputable as O
+
+import Debug.Trace ( traceShow, trace )
 
 data Locd a = Locd {
   l_loc :: RealSrcLoc,
@@ -260,23 +263,45 @@ instance ToJSON EdgeLabel where
       , (defContentsField, case l of { ArgEdge a b -> toJSON (a, b); AppEdge a b -> toJSON (a, b); BindEdge a -> toJSON a })
     ]
 
+type UAdjList a b = IM.IntMap (a, [(Gr.Node, b)])
 newtype AdjList a b = AdjList {
-  _unAdjList :: (IM.IntMap (a, [(Gr.Node, b)]))
+  _unAdjList :: UAdjList a b
 } deriving (Functor, Foldable) -- [(k, (a, [(k, b)]))]
 makeLenses ''AdjList
 
+adjlist_nodes :: Lens' (UAdjList a b) [(Gr.Node, [Gr.Node])]
+adjlist_nodes = lens get' set' where
+  get' = foldr ((:) . (id *** map fst . snd)) mempty . IM.toAscList
+  set' = flip $ \nodes ->
+      foldr (\((k, edges), (_k, v)) ->
+          IM.insert k (second (zipWith (L._1 .~) edges) v)
+        ) mempty
+        . zip nodes . IM.toAscList
+
+adjlist_node_map :: (Gr.Node -> Gr.Node) -> UAdjList a b -> UAdjList a b
+adjlist_node_map f = adjlist_nodes %~ (map (f *** map f))
+
+adjlist_merge l r =
+  let (l', r') = (l ^. unAdjList, r ^. unAdjList)
+      ((+1) -> lmax, _) = IM.findMax l'
+  in if IM.null l'
+    then (0, r)
+    else (
+        lmax,
+        AdjList $ l' <> (adjlist_node_map (+0) r') -- IM.foldrWithKey (curry $ uncurry IM.insert . (inc_lmax *** map (second (first inc_lmax)))) 
+      )
+
 instance Semigroup (AdjList a b) where
-  (AdjList l) <> (AdjList r) =
-    let (lmax, _) = IM.findMax l
-    in if IM.null l
-      then AdjList r
-      else AdjList $ IM.foldrWithKey (curry $ uncurry IM.insert . first (+(lmax + 1))) l r
+  (<>) = fmap snd . adjlist_merge
 
 instance Monoid (AdjList a b) where
   mempty = AdjList mempty
 
 instance (ToJSON a, ToJSON b) => ToJSON (AdjList a b) where
   toJSON (AdjList m) = toJSON m
+  
+instance (Outputable a, Outputable b) => Outputable (AdjList a b) where
+  ppr (AdjList m) = ppr m
   
 -- type SrcFileMap = M.Map FilePath Int
 data HollowGrState a = HollowGrState {
@@ -287,7 +312,9 @@ data HollowGrState a = HollowGrState {
 makeLenses ''HollowGrState
   
 instance Semigroup (HollowGrState a) where
-  (HollowGrState la lb) <> (HollowGrState ra rb) = HollowGrState (la <> ra) (lb <> rb)
+  (HollowGrState la lb) <> (HollowGrState ra rb) =
+    let (lmax, b) = adjlist_merge lb rb
+    in HollowGrState (la <> (map (first (+lmax)) ra)) b
 
 instance Monoid (HollowGrState a) where
   mempty = HollowGrState mempty mempty
@@ -297,6 +324,9 @@ instance ToJSON (HollowGrState a) where
       "at" .= at,
       "gr" .= gr
     ]
+
+instance Outputable (HollowGrState a) where
+  ppr (HollowGrState at gr) = ppr at O.<> O.blankLine O.<> ppr gr
 
 instance ToJSON FS.FastString where
   toJSON f = toJSON $ FS.unpackFS f
