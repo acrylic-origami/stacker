@@ -349,10 +349,10 @@ pt_search dflags (PtStore {..}) cs_segs =
                 return (mapMaybe (bisequence . (fmap fst . (nodes M.!?) *** Just) . fst) nk_sucs),
                 foldrM (\((this_nk, this_edge_lab), next) next_edges -> do
                     (next_nodes, next_edges') <- next
-                    let next_nodes' = case nodes M.!? this_nk of
-                          Just (n, _cs) -> map ((n, , this_edge_lab) . fst) next_nodes
+                    let new_edges = case nodes M.!? this_nk of
+                          Just (n, _cs) -> map (uncurry (n,,)) next_nodes
                           Nothing -> mempty
-                    return $ next_nodes' <> next_edges <> next_edges'
+                    return $ new_edges <> next_edges <> next_edges'
                   ) mempty nk_sucs
               )
           Nothing -> return r0
