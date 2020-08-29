@@ -120,7 +120,6 @@ export default class extends React.Component {
 			this.update_src_snips();
 		}
 		if(diff.src_snips) {
-			console.log('??');
 			this.setState({
 				hljs_result: hljs.highlight('haskell', this.props.body)
 			});
@@ -138,7 +137,6 @@ export default class extends React.Component {
 			// const spans = this.state.st_at.map(e => this.state.st_gr.jsg_gr.get(e)[1])
 			// 	.filter(l => !!l.length)[0]
 			// 	.map(([_, sp]) => sp)
-			console.log(this.props.spans);
 			const span_chars = this.props.spans.map(
 				([span, k]) => {
 					const [_src, [ll, lc], [rl, rc]] = span;

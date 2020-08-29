@@ -26,7 +26,7 @@ function ag2spans(ag) {
 				acc.push([el.contents[1], [SPANTY.CTX.BIND_FROM_AG, fw_edge]]);
 				break;
 			default:
-				throw new Exception(`Unexpected EdgeLabel exiting AppGroup: ${el.tag}`);
+				throw new Error(`Unexpected EdgeLabel exiting AppGroup: ${el.tag}`);
 		}
 	}
 	return acc;
@@ -42,12 +42,15 @@ export default class extends React.Component {
 	constructor(props) {
 		super(props);
 		
-		// type NodeKey = { tag: "NKApp" | "NKBind", contents: [Span] | Span }
-		// type EdgeLabel = { tag: "ArgEdge" | "AppEdge" | "BindEdge", contents: (Span, Span) | Span }
+		// type Loc = (Int, Int)
+		// type ISpan = (fileidx: String (show Int), start: Loc, end: Loc)
+		// type NodeKey = { tag: "NKApp" | "NKBind", contents: [ISpan] | ISpan }
+		// type EdgeLabel = { tag: "ArgEdge" | "AppEdge" | "BindEdge", contents: (ISpan, ISpan) | ISpan }
 		// type FWEdge = (Int, EdgeLabel)
 		this.state = {
 			gr: Map(), // Map<node: int, (NodeKey, [(edge_target: Node, EdgeLabel)])> { <node>: { key: NodeKey, edges: [FWEdge] }
 			at: null, // ?FWEdge
+			filelist: [], // [filename: String]
 			
 			src: null, // ?string
 			src_req_idx: 0
@@ -57,7 +60,7 @@ export default class extends React.Component {
 	componentDidMount() {
 		fetch('/static/gr.json')
 			.then(a => a.json())
-			.then(state_init_ => {
+			.then(([state_init_, filelist]) => {
 				// for(const scc in state_init.sccs) {
 				// 	if(state_init.sccs.hasOwnPropety(scc))
 				// 		state_init.sccs.get(scc) = new Set(state_init.sccs.get(scc));
@@ -65,6 +68,7 @@ export default class extends React.Component {
 				const state_init = {
 					at: state_init_.at[0],
 					gr: state_init_.gr.reduce((m, [k, a]) => m.set(k, a), Map()),
+					filelist
 				};
 				this.setState({ ...state_init })
 			});
@@ -94,10 +98,15 @@ export default class extends React.Component {
 			src: ((this.state.src === null) !== (pstate.src === null)) || (this.state.src !== null && pstate.src !== null && pstate.src.path !== this.state.src.path)
 		};
 		
-		const at_path = 'Text/Regex/TDFA/CorePattern.hie'; // this.state.gr.jsg_gr.get(this.state.at[0]).key.span.path;
-		if(this.state.src === null && at_path !== null || at_path !== this.state.src.path) {
+		let at_file = this.state.at[1].contents[0];
+		if(typeof at_file !== 'string')
+			at_file = at_file[0]; // ArgEdge or AppEdge, a list of edges. need to go one further in
+		
+		const at_path = this.state.filelist[parseInt(at_file)]; // this.state.gr.jsg_gr.get(this.state.at[0]).key.span.path;
+		console.log(at_path, at_file, this.state.filelist);
+		if(this.state.src === null && at_path != null || this.state.src !== null && at_path !== this.state.src.path) {
 			const stash_req_idx = this.state.src_req_idx;
-			fetch(`/f?n=${encodeURIComponent(at_path)}`)
+			fetch(`/f?n=${encodeURIComponent(at_path.replace('lib/', '').replace('.hs', '.hie'))}`)
 				.then(r => r.text())
 				.then(t => this.setState(st => {
 					if(this.state.src_req_idx === stash_req_idx) {
