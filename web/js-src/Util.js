@@ -1,4 +1,5 @@
 import { Map, Set } from 'immutable'
+import { SPANTY } from './Lang'
 
 class AssertionError extends Error {}
 export function assert(p, q) {
@@ -41,16 +42,25 @@ export function map_intersect(M, K) {
 	return K.reduce((m, k) => m.set(k, M.get(k)), Map());
 }
 
-export function candidate(sps) { // Set Span -> Span
-	const big_sps = sps.reduce((s, spa, ka) => sps.reduce((s_, spb, kb) => {
-		if(!s_.has(ka) && spa !== spb && span_contains(spa[0], spb[0])) {
-			return s_.add(ka); // eliminate all spans that contain other spans
+export function candidate(sp_ks) { // Map Span k -> (Span, k)
+	const void_sps = sp_ks.reduce((s, [ka, _], spa) => {
+		// console.log(ka, spa, Map(SPANTY.ENV).keyOf(ka));
+		if(Map(SPANTY.ENV).keyOf(ka) != undefined || Map(SPANTY.CTX).keyOf(ka) != undefined) {
+			return s.add(spa);
 		}
 		else {
-			return s_;
+			return sp_ks.reduce((s_, [_kb, _], spb) => {
+				if(spa !== spb && span_contains(spa[0], spb[0])) {
+					return s_.add(spa); // eliminate all spans that contain other spans
+				}
+				else {
+					return s_;
+				}
+			}, s);
 		}
-	}, s), Set());
-	return sps.filter(sp => !any(big_sp => list1eq(big_sp, sp), big_sps)).reduce((_, b) => b, null);
+	}, Set());
+	return sp_ks.filter((_, sp) => !any(void_sp => list1eq(void_sp, sp), void_sps))
+	            .toArray()[0];
 }
 
 export function any(f, t) {

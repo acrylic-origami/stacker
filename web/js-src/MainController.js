@@ -79,12 +79,12 @@ export default class extends React.Component {
 	snipClickHandler = (e, sp_ks) => {
 		// s :: (Span, Map Span (SPANTY, FWEdge)) // first span is the span of the mini region that was clicked
 		
-		const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding
-		const which_sp = candidate(sps), which = sp_ks.filter((_k, sp) => list1eq(sp, which_sp)).first()[1];
-		console.log(which_sp, which, sps);
-		debugger;
+		// const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding
+		// const which = ; // , which = sp_ks.filter((_k, sp) => list1eq(sp, which_sp)).first()[1];
+		const c = candidate(sp_ks)[1][1];
+		// console.log(c);
 		this.setState({
-			at: which
+			at: c
 		});
 		
 		// switch(which[0]) {
@@ -146,7 +146,6 @@ export default class extends React.Component {
 					// spans :: [(Span, (SPANTY, FWEdge))]
 					if(this.state.gr.has(node)) {
 						const [[next_nk, next_cs_id], next_edges] = this.state.gr.get(node);
-						console.log(this.state.gr.get(node));
 						const nk_span = next_nk.tag === 'NKBind' ? next_nk.contents.contents : next_nk.contents;
 						acc.push([nk_span, [NK2ENV.get(next_nk.tag), null]]);
 						
@@ -155,12 +154,13 @@ export default class extends React.Component {
 								// acc.push([el.contents[0], [SPANTY.AG_TO_ARG, el]]);
 								assert(next_nk.tag === 'NKBind');
 								acc.push([el.contents[1], [SPANTY.CTX.ARG, this.state.at]]);
-								acc.push([next_nk.contents, [SPANTY.CTX.BIND_FROM_ARG, this.state.at]]);
-								for(const [targ, fw_edge_] of next_edges) {
-									const el_ = fw_edge_[1];
+								acc.push([next_nk.contents.contents, [SPANTY.CTX.BIND_FROM_ARG, this.state.at]]);
+								for(const fw_edge_ of next_edges) {
+									const [targ, el_] = fw_edge_;
 									assert(el_.tag === 'BindEdge');
 									acc.push([el_.contents, [SPANTY.NODE.BIND_CALLSITE, fw_edge_]]);
 								}
+								console.log(acc);
 								break;
 							case "AppEdge":
 								// acc.push([el.contents[0], [SPANTY.NODE.AG_TO_BIND]])

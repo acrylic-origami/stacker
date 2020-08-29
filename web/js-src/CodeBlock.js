@@ -334,9 +334,11 @@ export default class extends React.Component {
 		// console.log(e, sp_ks);
 		switch(e.type) {
 			case 'mouseenter':
-				const sps = sp_ks.keySeq().toSet();
-				const sp = candidate(sps);
-				this.setState({ snip_focuses: sp })
+				const c = candidate(sp_ks);
+				if(c != null) {
+					const [sp, _k] = c;
+					this.setState({ snip_focuses: sp })
+				}
 				break;
 			case 'mouseleave':
 				this.setState({ snip_focuses: null })
