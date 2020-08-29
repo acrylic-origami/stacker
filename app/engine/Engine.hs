@@ -440,10 +440,16 @@ main = do
               , pt <- pts
             ]
           hollow_state = mconcat $ map (uncurry HollowGrState . second gr2adjlist) grs
-          (filemap, unfile_gr_state) =
+          ((filelist, filemap), unfile_gr_state) =
             hollow_state & (
                 st_gr $ unAdjList $ 
-                  first (M.fromList . (`zip` (map (fsLit . show) [0..])) . S.toList) .
+                  first (
+                      (
+                          id &&&
+                          M.fromList . (`zip` (map (fsLit . show) [0..]))
+                        )
+                      . S.toList
+                    ) .
                   IM.foldrWithKey (\k ((nk, cs), edges) (fm, ufs) ->
                       let unfile_node = (
                               (
@@ -468,7 +474,8 @@ main = do
       in flip const (targs, bound_fns, dflags, loc_cs_forest, pts, grs) $ do -- $ trace (show $ length loc_cs_forest) -- const (putStrLn $ unlines $ head $ M.elems $ lined_srcs) 
         -- putStrLn $ ppr_safe dflags bks
         -- putStrLn $ ppr_safe dflags bound_fns'
-        writeFile "static/gr.json" (UBL.toString $ Aeson.encode (unfile_state, filemap))
+        -- putStrLn $ ppr_safe dflags $ map (fmap (null . Gr.neighbors') . fst . Gr.match 992 . snd) grs
+        writeFile "static/gr.json" (UBL.toString $ Aeson.encode (unfile_state, filelist))
         const (pure ()) $ do
           -- putStrLn $ ppr_safe dflags $ M.elems . (^. ps_fns) <$> pts
           -- putStrLn $ ppr_safe dflags $ (^. (ps_binds . bg_named_lookup)) <$> pts
