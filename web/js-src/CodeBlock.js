@@ -128,33 +128,33 @@ export default class extends React.Component {
 		}
 		*/
 		this.state = {
-			src_snips: [], // [(ColSpan, ?(Map Span k))] // intermediate state so that re-snipping and re-rendering is decoupled from the props upstairs changing inconsequentially
+			// src_snips: [], // [(ColSpan, ?(Map Span k))] // intermediate state so that re-snipping and re-rendering is decoupled from the props upstairs changing inconsequentially
 			root_container_el: null,
-			hljs_result: null,
+			parsetree: null, // 
+			snip_focuses: null
 		};
 		this.src_ref = React.createRef();
 	}
 	componentDidUpdate(pprops, pstate) {
 		const diff = {
 			body: pprops.body !== this.props.body,
-			src_snips: pstate.src_snips !== this.state.src_snips,
-			spans: pprops.spans !== this.props.spans
+			spans: pprops.spans !== this.props.spans,
+			snip_focuses: pstate.snip_focuses !== this.state.snip_focuses,
+			hljs_result: pstate.hljs_result !== this.state.hljs_result,
 		};
-		if(diff.body || diff.spans) {
-			this.update_src_snips();
+		if(diff.body) {
+			this.setState({ hljs_result: hljs.highlight('haskell', this.props.body) });
 		}
-		if(diff.src_snips) {
-			this.setState({
-				hljs_result: hljs.highlight('haskell', this.props.body)
-			});
-			// requestAnimationFrame(e => {
-			// 	hljs.highlightBlock(this.src_ref.current);
-			// 	// const a = hljs.highlight('haskell', 'module A where')
-			// 	// debugger;
-			// }); // assume synchronous
+		if(diff.hljs_result || diff.spans) {
+			this.update_parsetree();
 		}
+		// requestAnimationFrame(e => {
+		// 	hljs.highlightBlock(this.src_ref.current);
+		// 	// const a = hljs.highlight('haskell', 'module A where')
+		// 	// debugger;
+		// }); // assume synchronous
 	}
-	update_src_snips() {
+	get_src_snips() {
 		if(this.props.body != null && this.props.spans != null) {
 			const cum_line_chars = this.props.body.split('\n').reduce((acc, l) => acc.push(acc[acc.length - 1] + l.length + 1) === -1 || acc, [0]); // +1 for \n, faster push than concat
 			// spans.sort(([la, ca], [lb, cb]) => la > lb || (la === lb && ca > cb));
@@ -195,7 +195,6 @@ export default class extends React.Component {
 			}
 			const I = T.items; // [{ key: (Int, Int), value: [(Span, k)] }]
 			// console.log(span_chars, I.map(({ key }) => key));
-			const D = Q.defer();
 			if(I.length > 0) {
 				I.sort((l, r) => l.key[0] > r.key[0]); // sort intervals in ascending order
 				const S = [[[0, I[0].key[0]], null]];
@@ -205,66 +204,19 @@ export default class extends React.Component {
 						[[I[i].key[1], i >= I.length - 1 ? undefined : I[i + 1].key[0]], null]
 					);
 				}
-				this.setState(st => {
-					D.resolve(st);
-					return { src_snips: S };
-				});
+				return S;
 			}
 			else {
-				this.setState(st => {
-					D.resolve(st);
-					return { src_snips: [] };
-				});
+				return [];
 			}
-			return D.promise;
 		}
 	}
 	
-	// function push_leaf(n, t) {
-	// 	if(typeof t !== 'string') {
-	// 		const is_deepest = true;
-	// 		for(const t_ of t[1]) {
-	// 			if(typeof t_ !== 'string')
-	// 				is_deepest = false;
-	// 		}
-	// 		if(is_deepest) {
-	// 			return [t[0], t[1].concat([n])];
-	// 		}
-	// 		else {
-	// 			return [t[0], t[1].map(t_ => push_leaf(n, t_))];
-	// 		}
-	// 	}
-	// 	else {
-	// 		return t;
-	// 	}
-	// }
-	// function rt(t) {
-	// 	// t :: KTree := string | (kind: String, children: [KTree])
-	// 	return <span className={`hljs-${t.kind}`}>{t.children.map(t_ => typeof t_ === 'string' ? t_ : rt(t_))}</span>;
-	// }
-	
-	render_highlight() {
-		const mksnip = (txt, sp, sp_ks) => {
-			if(sp_ks != null)
-				return <Snip
-					onClick={this.props.onSnipClick}
-					onMouseEnter={this.snipHoverHandler}
-					onMouseLeave={this.snipHoverHandler}
-					ks={sp_ks}
-					key={sp.toString()}
-					className={
-						sp_ks.has(this.state.snip_focuses)
-						? 'focused'
-						: ''
-					}
-					root={this.state.root_container_el}
-					scroll_idx={this.props.should_scroll_to(sp_ks)} // just 0 or 1 for now: include re-focusing as needed
-				>
-					{ this.props.wrap_snip(txt, sp_ks) }
-				</Snip>;
-			else
-				return txt;
-		}
+	update_parsetree() {
+		if(this.props.body === null)
+			return null;
+		
+		const src_snips = this.get_src_snips();
 		function rt(tree) {
 			function rt_(t, n) {
 				// t :: KTree := string | (kind: String, children: [KTree])
@@ -282,53 +234,78 @@ export default class extends React.Component {
 			return rt_(tree, 0)[0];
 		}
 		
-		if(this.state.src_snips !== null && this.state.hljs_result !== null) {
-			const r = (hl_t, snip_idx, n) => {
-				// KTree := string | { kind: String, children: [KTree] }
-				// KTree -> Int -> Int -> ([KTree], Int)
-				if(typeof hl_t === 'string') {
-					// console.log(this.state.src_snips, snip_idx);
-					const rightdist = this.state.src_snips[snip_idx][0][1] - n;
-					if(rightdist <= hl_t.length) {  // TODO check openness of span boundaries
-						// console.log(snip_idx, next_n, this.state.src_snips[snip_idx]);
-						// need to cut this tag in half
-						const next = r(hl_t.slice(rightdist), snip_idx + 1, this.state.src_snips[snip_idx][0][1]);
-						// const partial_t_ = push_leaf(, partial_t);
-						const here = hl_t.slice(0, rightdist); // mksnip(rt(partial_t_));
-						next[0].unshift(here); // push new tag to start
-						return next;
-					}
-					else {
-						return [[hl_t], [snip_idx, n + hl_t.length]];
-					}
+		const r = (hl_t, snip_idx, n) => {
+			// KTree := string | { kind: String, children: [KTree] }
+			// KTree -> Int -> Int -> ([KTree], Int)
+			if(typeof hl_t === 'string') {
+				// console.log(src_snips, snip_idx);
+				const rightdist = src_snips[snip_idx][0][1] - n;
+				if(rightdist <= hl_t.length) {  // TODO check openness of span boundaries
+					// console.log(snip_idx, next_n, src_snips[snip_idx]);
+					// need to cut this tag in half
+					const next = r(hl_t.slice(rightdist), snip_idx + 1, src_snips[snip_idx][0][1]);
+					// const partial_t_ = push_leaf(, partial_t);
+					const here = hl_t.slice(0, rightdist); // mksnip(rt(partial_t_));
+					next[0].unshift(here); // push new tag to start
+					return next;
 				}
 				else {
-					let snip_idx_ = snip_idx;
-					let n_ = n;
-					const root_ctor = () => ({ kind: hl_t.kind, children: [] });
-					const roots = [root_ctor()];
-					for(const c of hl_t.children) {
-						const next = r(c, snip_idx_, n_);
-						const next_trees = next[0];
-						[snip_idx_, n_] = next[1];
-						for(let t = 0; t < next_trees.length; t++) {
-							if(t > 0)
-								roots.push(root_ctor());
-							
-							roots[roots.length - 1].children.push(next_trees[t]);
-						}
-					}
-					return [roots, [snip_idx_, n_]];
+					return [[hl_t], [snip_idx, n + hl_t.length]];
 				}
 			}
-			const [ts, _] = r(this.state.hljs_result.emitter.root, 0, 0);
-			const snips = [];
-			for(let i = 0; i < ts.length; i++)
-				snips.push(mksnip(rt(ts[i]), this.state.src_snips[i][0], this.state.src_snips[i][1]));
-			
-			return <span>{snips.map((ele, k) => <span key={k}>{ele}</span>)}</span>;
+			else {
+				let snip_idx_ = snip_idx;
+				let n_ = n;
+				const root_ctor = () => ({ kind: hl_t.kind, children: [] });
+				const roots = [root_ctor()];
+				for(const c of hl_t.children) {
+					const next = r(c, snip_idx_, n_);
+					const next_trees = next[0];
+					[snip_idx_, n_] = next[1];
+					for(let t = 0; t < next_trees.length; t++) {
+						if(t > 0)
+							roots.push(root_ctor());
+						
+						roots[roots.length - 1].children.push(next_trees[t]);
+					}
+				}
+				return [roots, [snip_idx_, n_]];
+			}
 		}
-		else return null;
+		if(this.state.hljs_result != null) {
+			const [ts, _] = r(this.state.hljs_result.emitter.root, 0, 0);
+			
+			this.setState({
+				parsetree: ts.map((t, i) => [rt(t), src_snips[i][0], src_snips[i][1]])
+			});
+		}
+	}
+	render_highlight() {
+		if(this.state.parsetree === null)
+			return null;
+		else return <span>{this.state.parsetree.map(([txt, sp, sp_ks], k) => <span key={k}>
+			{
+				/* need to be very careful with <Snip />. As a PureComponent, all */
+				sp_ks == null
+					? txt
+					: <Snip
+						onClick={this.props.onSnipClick}
+						onMouseEnter={this.snipHoverHandler}
+						onMouseLeave={this.snipHoverHandler}
+						ks={sp_ks}
+						key={sp.toString()}
+						className={
+							sp_ks.has(this.state.snip_focuses)
+							? 'focused'
+							: ''
+						}
+						root={this.state.root_container_el}
+						scroll_idx={this.props.should_scroll_to(sp_ks)} // just 0 or 1 for now: include re-focusing as needed
+					>
+						{ this.props.wrap_snip(txt, sp_ks) }
+					</Snip>
+			}
+		</span>)}</span>;
 	}
 	snipHoverHandler = (e, sp_ks) => {
 		// console.log(e, sp_ks);

@@ -154,13 +154,14 @@ export default class extends React.Component {
 								// acc.push([el.contents[0], [SPANTY.AG_TO_ARG, el]]);
 								assert(next_nk.tag === 'NKBind');
 								acc.push([el.contents[1], [SPANTY.CTX.ARG, this.state.at]]);
-								acc.push([next_nk.contents.contents, [SPANTY.CTX.BIND_FROM_ARG, this.state.at]]);
+								acc.push([nk_span, [SPANTY.CTX.BIND_FROM_ARG, this.state.at]]);
 								for(const fw_edge_ of next_edges) {
 									const [targ, el_] = fw_edge_;
 									assert(el_.tag === 'BindEdge');
 									acc.push([el_.contents, [SPANTY.NODE.BIND_CALLSITE, fw_edge_]]);
 								}
-								console.log(acc);
+								// console.log(next_edges);
+								// console.log(acc);
 								break;
 							case "AppEdge":
 								// acc.push([el.contents[0], [SPANTY.NODE.AG_TO_BIND]])
