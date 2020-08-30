@@ -82,7 +82,6 @@ export default class extends React.Component {
 		// const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding
 		// const which = ; // , which = sp_ks.filter((_k, sp) => list1eq(sp, which_sp)).first()[1];
 		const c = candidate(sp_ks)[1][1];
-		// console.log(c);
 		this.setState({
 			at: c
 		});

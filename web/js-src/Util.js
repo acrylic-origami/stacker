@@ -66,3 +66,9 @@ export function candidate(sp_ks) { // Map Span k -> (Span, k)
 export function any(f, t) {
 	return t.reduce((b, a) => f(a) || b, false);
 }
+
+export function compare(a, b) {
+	if(a > b) return 1;
+	if(a === b) return 0;
+	return -1;
+}

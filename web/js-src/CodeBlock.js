@@ -4,8 +4,9 @@ import hljs from 'highlight.js/lib/core'
 import hs from 'highlight.js/lib/languages/haskell'
 import IntervalTree from '@flatten-js/interval-tree'
 import Snip from './Snip'
-import { span_contains, map_intersect, candidate } from './Util'
+import { span_contains, map_intersect, candidate, compare } from './Util'
 import { Set, Map } from 'immutable'
+import { MinHeap } from 'mnemonist'
 
 hljs.registerLanguage('haskell', hs);
 
@@ -164,45 +165,50 @@ export default class extends React.Component {
 			const span_chars = this.props.spans.map(
 				([span, k]) => {
 					const [_src, [ll, lc], [rl, rc]] = span;
-					return [cum_line_chars[ll - 1] + lc - 1, cum_line_chars[rl - 1] + rc - 1, [[span, k]]];
+					return { key: [cum_line_chars[ll - 1] + lc - 1, cum_line_chars[rl - 1] + rc - 1], value: [span, k] };
 				}
 			); // :: [(Int, Int, (Span, k))]
-			const T = new IntervalTree();
-			for(let i = 0; i < span_chars.length; i++) {
-				const hits = T.search(span_chars[i].slice(0, 2), ((v, k) => ({ key: k, value: v })));
-				let QQ = [span_chars[i]];
-				for(const hit of hits) {
-					let Q = QQ;
-					QQ = [];
-					const listhit = [hit.key.low, hit.key.high, hit.value];
-					for(const q of Q) {
-						const a = ivl_split([q, listhit]);
-						// console.log([JSON.stringify(a), JSON.stringify(q), JSON.stringify(hit)].join('\n\n'));
-						QQ.push.apply(QQ, a);
+			// if(this.props.spans.length > 100) return [];
+			
+			const I = []; // list of disjoint merged intervals
+			Set().withMutations(vals => {
+				const ends = new MinHeap((a, b) => compare(a.key[1], b.key[1]));
+				const starts = span_chars.sort((a, b) => compare(a.key[0], b.key[0]));
+				starts.push({ key: [Infinity, Infinity], value: null });
+				
+				let last_il = null;
+				for(const start of starts) {
+					while(ends.size > 0 && ends.peek().key[1] <= start.key[0]) {
+						const end = ends.pop();
+						if(last_il !== end.key[1])
+							I.push({ key: [last_il, end.key[1]], value: vals.toArray() });
 						
-						// if(u !== t) {
-						// }
-						// else {
-						// 	Q.push(t[0]); // optimize for the fact the tree should already be disjoint
-						// }
+						vals.delete(end.value);
+						last_il = end.key[1];
 					}
-					QQ = Set(QQ).toArray();
+					if(last_il !== null && last_il !== start.key[0] && vals.size > 0) {
+						I.push({ key: [last_il, start.key[0]], value: vals.toArray() });
+					}
+					last_il = start.key[0];
+					ends.push(start);
+					vals.add(start.value);
 				}
-				for(const hit of hits)
-					T.remove(hit.key);
-				for(const q of QQ)
-					T.insert(q.slice(0, 2), q[2]);
-			}
-			const I = T.items; // [{ key: (Int, Int), value: [(Span, k)] }]
+				// debugger;
+				console.log(I);
+				// I.pop(); // remove the dummy between the last node and the infinity node
+			});
+			
+			// const I = T.items; // [{ key: (Int, Int), value: [(Span, k)] }]
 			// console.log(span_chars, I.map(({ key }) => key));
 			if(I.length > 0) {
-				I.sort((l, r) => l.key[0] > r.key[0]); // sort intervals in ascending order
+				// I.sort((l, r) => compare(l.key[0], r.key[0])); // sort intervals in ascending order
 				const S = [[[0, I[0].key[0]], null]];
 				for(let i = 0; i < I.length; i++) {
 					S.push(
 						[[I[i].key[0], I[i].key[1]], Map(I[i].value)],
-						[[I[i].key[1], i >= I.length - 1 ? undefined : I[i + 1].key[0]], null]
 					);
+					if(i >= I.length - 1 || I[i].key[1] !== I[i + 1].key[0]) // filter zero-length spans
+						S.push([[I[i].key[1], i >= I.length - 1 ? undefined : I[i + 1].key[0]], null])
 				}
 				return S;
 			}
