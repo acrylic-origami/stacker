@@ -200,7 +200,6 @@ data EdgeLabel =
   | BindEdge Span -- just the bindee location itself
   -- the name location that links the nodes together (e.g. a symbol within an AppGroup + its binding, the arg )
 
--- asymmetric lens? hmm...
 el_spans :: Lens' EdgeLabel [Span]
 el_spans = lens spget spset where
   spget (ArgEdge a b) = [a ^. s_span, b ^. s_span]

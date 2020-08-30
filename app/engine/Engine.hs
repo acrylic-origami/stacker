@@ -145,116 +145,125 @@ arg_idents ast =
   $ mconcat $ map (shallower (has_node_constr ["GRHS", "HsValBinds"])) (nodeChildren ast) -- HsValBinds for some funky `where` clauses
 
 mk_pt_store :: DynFlags -> HieAST TypeIndex -> PtStore TypeIndex
-mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree $ STree.fromList $ map seg2intervalish s)) . snd . mk_pt_store' False . ([],) where
-  mk_pt_store' :: Bool -> ([HieAST TypeIndex], HieAST TypeIndex) -> ([AppGroup], PtStore TypeIndex)
-  mk_pt_store' _ (ast_stack, ast)
-    | has_node_constr ["PatBind", "Match"] ast
-    , Just (First True) <- mconcat $ map (\ast' ->
-        if has_node_constr ["GRHS"] ast'
-          then Just (First False)
-          else if has_node_constr ["FunBind", "PatBind"] ast'
-            then Just (First True)
-            else Nothing
-      ) (ast:ast_stack)
-    , ((fn_names, fn_args), grhss@(_:_)) <- arg_idents ast
-    = let next_ast_stack = (ast : ast_stack)
-          -- fn_names = (M.keys $ generateReferencesMap $ [(\x -> if null x then error "1" else head x) $ nodeChildren ast])
-          (next_names, next_store) = mconcat $ map (mk_pt_store' False . (next_ast_stack,)) grhss
-          fn_keys = if has_node_constr ["HsLam"] ast
-            then [BindLam (nodeSpan ast)]
-            else if not $ null fn_names
-              then map BindNamed fn_names
-              else map BindNamed fn_args -- pattern-match case
-          keymerge n a b = trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a
-      in flip const (ast, dflags, (grhss), (fn_args), next_store)
-        -- $ trace (ppr_safe dflags (fn_names, fn_keys))
-        $ (
-            [] -- clear accumulated names
-            , next_store
-            & ps_binds %~ (
-                (
-                    bg_arg_bnd_map %~ (
-                        if not $ null fn_names
-                          then M.unionWithKey keymerge
-                            $ M.fromList
-                            $ map (, head fn_keys)
-                            $ filter (is_var_name . _s_payload)
-                            $ unique fn_args
-                          else id
-                      )
-                  )
-                . (
-                    bg_bnd_app_map %~ (\m ->
-                        foldr (\case 
-                            BindNamed i -> M.insertWith (<>) i next_names
-                            _ -> id
-                          ) m fn_keys
-                      )
-                  )
-                 -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
-              )
-            -- & ps_binds %~ (M.unionsWith (<>) . (:(map (fuzzy_patbinds) grhss))) -- search entire function body for patterns ONLY HERE, at the top of a function
-          )
-  mk_pt_store' within_app (ast_stack, ast) =
-    let is_this_app = has_node_constr aPPS ast
-        is_this_bind = has_node_constr ["BindStmt"] ast -- any (any (\case { PatternBind {} -> True; _ -> False }) $ S.toList $ identInfo) $ nodeIdentifiers $ nodeInfo ast
-        is_this_case = has_node_constr ["HsCase"] ast
-        next_ast_stack = (ast : ast_stack)
-        -- next_within_app = not is_this_bind && (is_this_app || within_app)
-        dig next_within_app = mconcat $ map (mk_pt_store' next_within_app . (next_ast_stack,)) (nodeChildren ast)
-    in -- trace (ppr_safe dflags $ map (\ast' -> (nodeIdentifiers $ nodeInfo ast', nodeAnnotations $ nodeInfo ast', is_this_bind)) (ast : nodeChildren ast)) $
-       if | is_this_bind || is_this_case
-          -> let (binder_ags, binder_store) =
-                    if is_this_bind
-                      then mk_pt_store' False (next_ast_stack,nodeChildren ast !! 1)
-                      else fromMaybe mempty $ mk_pt_store' False . (next_ast_stack,) <$> listToMaybe (nodeChildren ast) -- watching out for EmptyCase
-                 bindees :: [LIdentifier]
-                 (bindees, (next_names, next_store)) =
-                    first (filter (is_var_name . _s_payload)) $
-                    if is_this_bind
-                      then (
-                          map (uncurry (flip Spand))
+mk_pt_store dflags = (
+    (ps_app_groups . ag_span_map) %~ (\(SegFlat s) ->
+        SegTree $ STree.fromList $ map seg2intervalish s
+      )
+  )
+  . snd
+  . mk_pt_store' False . ([],)
+  where
+    mk_pt_store' :: Bool -> ([HieAST TypeIndex], HieAST TypeIndex) -> ([AppGroup], PtStore TypeIndex)
+    mk_pt_store' _ (ast_stack, ast)
+      | has_node_constr ["PatBind", "Match"] ast
+      , Just (First True) <- mconcat $ map (\ast' ->
+          if has_node_constr ["GRHS"] ast'
+            then Just (First False)
+            else if has_node_constr ["FunBind", "PatBind"] ast'
+              then Just (First True)
+              else Nothing
+        ) (ast:ast_stack)
+      , ((fn_names, fn_args), grhss@(_:_)) <- arg_idents ast
+      = let next_ast_stack = (ast : ast_stack)
+            -- fn_names = (M.keys $ generateReferencesMap $ [(\x -> if null x then error "1" else head x) $ nodeChildren ast])
+            (next_names, next_store) = mconcat $ map (mk_pt_store' False . (next_ast_stack,)) grhss
+            fn_keys = if has_node_constr ["HsLam"] ast
+              then [BindLam (nodeSpan ast)]
+              else if not $ null fn_names
+                then map BindNamed fn_names
+                else map BindNamed fn_args -- pattern-match case
+            keymerge n a b = trace (ppr_safe dflags n <> " is arg'd to two functions: " <> ppr_safe dflags a <> " & " <> ppr_safe dflags b) a
+        in flip const (ast, dflags, (grhss), (fn_args), next_store)
+          -- $ trace (ppr_safe dflags (fn_names, fn_keys))
+          $ (
+              [] -- clear accumulated names
+              , next_store
+              & ps_binds %~ (
+                  (
+                      bg_arg_bnd_map %~ (
+                          if not $ null fn_names
+                            then M.unionWithKey keymerge
+                              $ M.fromList
+                              $ map (, head fn_keys)
+                              $ filter (is_var_name . _s_payload)
+                              $ unique fn_args
+                            else id
+                        )
+                    )
+                  . (
+                      bg_bnd_app_map %~ (\m ->
+                          foldr (\case 
+                              BindNamed i -> M.insertWith (<>) i next_names
+                              _ -> id
+                            ) m fn_keys
+                        )
+                    )
+                   -- insert all fn_arg names pointing to fn_key. assume/invariant no collisions even with mulitple arg sets: given different names
+                )
+              -- & ps_binds %~ (M.unionsWith (<>) . (:(map (fuzzy_patbinds) grhss))) -- search entire function body for patterns ONLY HERE, at the top of a function
+            )
+    mk_pt_store' within_app (ast_stack, ast) =
+      let is_this_app = has_node_constr aPPS ast
+          is_this_bind = has_node_constr ["BindStmt"] ast -- any (any (\case { PatternBind {} -> True; _ -> False }) $ S.toList $ identInfo) $ nodeIdentifiers $ nodeInfo ast
+          is_this_case = has_node_constr ["HsCase"] ast
+          next_ast_stack = (ast : ast_stack)
+          -- next_within_app = not is_this_bind && (is_this_app || within_app)
+          dig next_within_app = mconcat $ map (mk_pt_store' next_within_app . (next_ast_stack,)) (nodeChildren ast)
+      in -- trace (ppr_safe dflags $ map (\ast' -> (nodeIdentifiers $ nodeInfo ast', nodeAnnotations $ nodeInfo ast', is_this_bind)) (ast : nodeChildren ast)) $
+         if | is_this_bind || is_this_case
+            -> let (binder_ags, binder_store) =
+                      if is_this_bind
+                        then mk_pt_store' False (next_ast_stack,nodeChildren ast !! 1)
+                        else fromMaybe mempty $ mk_pt_store' False . (next_ast_stack,) <$> listToMaybe (nodeChildren ast) -- watching out for EmptyCase
+                   bindees :: [LIdentifier]
+                   (bindees, (next_names, next_store)) =
+                      first (filter (is_var_name . _s_payload)) $
+                      if is_this_bind
+                        then
+                          (, mempty)
+                            $ map (uncurry (flip Spand))
                             $ concatMap (bisequence . (pure *** map fst))
                             $ M.toList
                             $ generateReferencesMap
                             $ take 1
                             $ nodeChildren ast
-                          , mempty
-                        )
-                      else (snd *** mconcat . map (mk_pt_store' False . (next_ast_stack,))) $ mconcat $ map arg_idents $ drop 1 $ nodeChildren ast
-                 -- bindees = concatMap (uncurry (liftA2 (,)) . (pure *** map fst)) $ M.toList bindee_identmap -- [(Span, Identifier)]
-                 binder_store' = binder_store & (ps_binds %~ mappend BindGroups {
-                    -- _bg_named_lookup = S.fromList bindees,
-                    _bg_arg_bnd_map = mempty,
-                    _bg_bnd_app_map = M.fromList $ map (,binder_ags) bindees
-                  })
-            in flip const (dflags, ast, binder_ags, binder_store) $ (
-                binder_ags -- <> next_names -- make binds be name boundaries
-                , binder_store' <> next_store
-              )
-            
-          | has_node_type ["HsExpr"] ast
-          -> let (next_ags, next_store) = dig True
-                 this_names = getShallowReferences ast
-                 next_names' = concatMap _s_payload next_ags <> this_names -- throw out locs of direct descendants: they're part of _this_ app group now
-                 next_ag = Spand (nodeSpan ast) next_names'
-            in (
-                [next_ag] -- pass this up to a bind to make deps, invariant that it doesn't hit another app thing (see the top-level `otherwise` clause)
-                , if not within_app
+                        else (snd
+                            *** mconcat . map (
+                                mk_pt_store' False . (next_ast_stack,)
+                              )
+                          )
+                          $ mconcat $ map arg_idents
+                          $ drop 1
+                          $ nodeChildren ast
+                   binder_store' = binder_store & (ps_binds %~ mappend BindGroups {
+                      _bg_arg_bnd_map = mempty,
+                      _bg_bnd_app_map = M.fromList $ map (,binder_ags) bindees
+                    })
+              in flip const (dflags, ast, binder_ags, binder_store) $ (
+                  binder_ags -- <> next_names -- make binds be name boundaries
+                  , binder_store' <> next_store
+                )
+              
+            | has_node_type ["HsExpr"] ast
+            -> let (next_ags, next_store) = dig True
+                   this_names = getShallowReferences ast
+                   next_names' = concatMap (^. s_payload) next_ags <> this_names -- throw out locs of direct descendants: they're part of _this_ app group now
+                   next_ag = Spand (nodeSpan ast) next_names'
+              in ([next_ag], ) $ -- pass this up to a bind to make deps, invariant that it doesn't hit another app thing (see the top-level `otherwise` clause)
+                if not within_app
                   then next_store & ps_app_groups %~ (
                       (ag_span_map %~ mappend (SegFlat [Spand (nodeSpan ast) next_ag]))
                       . (ag_ident_map %~ (\m -> foldr (flip (M.insertWith (<>)) [next_ag]) m next_names')) -- up to 
                     )
-                  else next_store
-              ) -- form appgroup and shove names into it
-              
-          | otherwise -> dig within_app
-          -- | otherwise
-          -- -> let this_names = M.keys $ nodeIdentifiers $ nodeInfo ast -- only aggregate from the names that exist at this node
-          --        next_store' = if not is_this_app
-          --         then next_store & (ps_app_groups . ag_ident_map) %~ (\m -> foldr (flip M.insert this_names) m this_names) -- if this is a root-ish node 
-          --         else next_store
-          --   in ( this_names <> next_names, next_store' )
+                  else next_store -- form appgroup and shove names into it
+                
+            | otherwise -> dig within_app
+            -- | otherwise
+            -- -> let this_names = M.keys $ nodeIdentifiers $ nodeInfo ast -- only aggregate from the names that exist at this node
+            --        next_store' = if not is_this_app
+            --         then next_store & (ps_app_groups . ag_ident_map) %~ (\m -> foldr (flip M.insert this_names) m this_names) -- if this is a root-ish node 
+            --         else next_store
+            --   in ( this_names <> next_names, next_store' )
 
 xselfmap :: (a -> a -> b) -> [a] -> [b]
 xselfmap f (a:l) = (map (f a) l) <> xselfmap f l
