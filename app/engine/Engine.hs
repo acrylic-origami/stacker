@@ -310,21 +310,25 @@ pt_search dflags (PtStore {..}) cs_segs =
       pt_search' m_ident =
         let (nk_sucs, m_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
               Left bk ->
-                let (ags, m_cs') = case bk of
+                let (bindsp_ags, m_cs') = case bk of
                       BindNamed fn_ident -> (
-                          concat
-                          $ (maybeToList $ (_ps_app_groups ^. ag_ident_map) M.!? fn_ident)
-                          <> (maybeToList $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident)
+                          maybeToList
+                          $ ((^. s_span) *** mappend (fromMaybe [] $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident))
+                          <$> (_ps_app_groups ^. ag_ident_map) !?~ fn_ident
                           , find_min_cs $ _s_span fn_ident
                         )
                       BindLam fn_span -> (
-                          segfind (_ps_app_groups ^. ag_span_map) fn_span
+                          [(
+                              fn_span,
+                              segfind (_ps_app_groups ^. ag_span_map) fn_span
+                            )]
                           , find_min_cs fn_span
                         )
                 in (
                     [
-                      ((NKApp ag, BindEdge $ bk ^. bk_span), with_ag (pt_search' . Right) ag)
-                      | ag <- ags
+                      ((NKApp ag, BindEdge bindsp), with_ag (pt_search' . Right) ag)
+                      | (bindsp, ags) <- bindsp_ags
+                      , ag <- ags
                     ]
                       -- $ M.toList $ M.restrictKeys nodes (S.fromList $ map NKApp )
                     , m_cs'
