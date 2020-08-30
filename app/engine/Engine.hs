@@ -229,7 +229,7 @@ mk_pt_store dflags = ((ps_app_groups . ag_span_map) %~ (\(SegFlat s) -> SegTree 
                     _bg_bnd_app_map = M.fromList $ map (,binder_ags) bindees
                   })
             in flip const (dflags, ast, binder_ags, binder_store) $ (
-                binder_ags <> next_names -- make binds be name boundaries
+                binder_ags -- <> next_names -- make binds be name boundaries
                 , binder_store' <> next_store
               )
             
