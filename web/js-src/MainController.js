@@ -156,8 +156,14 @@ export default class extends React.Component {
 								acc.push([nk_span, [SPANTY.CTX.BIND_FROM_ARG, this.state.at]]);
 								for(const fw_edge_ of next_edges) {
 									const [targ, el_] = fw_edge_;
-									assert(el_.tag === 'BindEdge');
-									acc.push([el_.contents, [SPANTY.NODE.BIND_CALLSITE, fw_edge_]]);
+									switch(el_.tag) {
+										case 'BindEdge':
+											acc.push([el_.contents, [SPANTY.NODE.BIND_CALLSITE, fw_edge_]]);
+											break;
+										case 'RevBindEdge':
+											acc.push([el_.contents, [SPANTY.NODE.BIND_MATCHSITE, fw_edge_]]);
+											break;
+									}
 								}
 								// console.log(next_edges);
 								// console.log(acc);
@@ -168,6 +174,11 @@ export default class extends React.Component {
 								acc.push.apply(acc, ag2spans(next_edges));
 								break;
 							case "BindEdge":
+								assert(next_nk.tag === 'NKApp');
+								acc.push([el.contents, [SPANTY.CTX.BIND_FROM_ARG, this.state.at]]);
+								acc.push.apply(acc, ag2spans(next_edges));
+								break;
+							case "RevBindEdge":
 								assert(next_nk.tag === 'NKApp');
 								acc.push([el.contents, [SPANTY.CTX.BIND_FROM_ARG, this.state.at]]);
 								acc.push.apply(acc, ag2spans(next_edges));

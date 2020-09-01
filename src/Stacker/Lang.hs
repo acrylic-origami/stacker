@@ -82,7 +82,7 @@ instance Monoid (Segs a) where
 type AppGroup = Spand [LIdentifier]
 
 data AppGroups a = AppGroups {
-  _ag_ident_map :: M.Map LIdentifier [AppGroup], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
+  _ag_ident_map :: M.Map Identifier [(Span, AppGroup)], -- app groups are disjoint sets, but all libs are too annoying to use (e.g. there aren't any nice and easy ele -> class functions) so just make them all point to the same set by construction
   _ag_span_map :: Segs AppGroup
 } -- NOTE! AppGroups are used to find instances of _usages_ of _bindings_ after tracing an ident to an _argument_ only. NOT for idents -> other idents. Instead trace those to their binding sites, then to their RHS closed dependencies
 makeLenses ''AppGroups
@@ -98,8 +98,9 @@ bk_span = lens get' set' where
 
 type IdentMap a = M.Map LIdentifier [(Span, IdentifierDetails a)]
 data BindGroups = BindGroups {
+  -- be careful using !?~ here: it seems to be okay because bind sites are unique per name and args are too, this uniqueness is required to use !?~
   _bg_arg_bnd_map :: M.Map LIdentifier BindKey,
-  _bg_bnd_app_map :: M.Map LIdentifier [AppGroup]
+  _bg_bnd_app_map :: M.Map Identifier [(Span, AppGroup)]
   -- _bg_named_lookup :: S.Set LIdentifier -- find BindNamed
 }
 makeLenses ''BindGroups
@@ -186,28 +187,32 @@ instance Outputable (NodeKey a) where
   ppr (NKApp a) = O.text "NKApp" <+> ppr a
   ppr (NKBind b) = O.text "NKBind" <+> ppr b
   
-instance Outputable EdgeLabel where
-  ppr el@(ArgEdge a b) = O.text (el_ctor el) <+> ppr a <+> ppr b
-  ppr el@(AppEdge a b) = O.text (el_ctor el) <+> ppr a <+> ppr b
-  ppr el@(BindEdge a) = O.text (el_ctor el) <+> ppr a
-  
 
 --------------------------------------------------
 
 data EdgeLabel =
   ArgEdge LIdentifier LIdentifier -- loc of source, loc of target argument
   | AppEdge LIdentifier LIdentifier -- loc of source, loc of target binding
-  | BindEdge Span -- just the bindee location itself
+  | BindEdge Span -- just the bindee location itself (bindee -> dependent callsite app groups)
+  | RevBindEdge Span -- just the bindee location itself (bindee -> dependent rhs app groups)
   -- the name location that links the nodes together (e.g. a symbol within an AppGroup + its binding, the arg )
+  
+instance Outputable EdgeLabel where
+  ppr el@(ArgEdge a b) = O.text (el_ctor el) <+> ppr a <+> ppr b
+  ppr el@(AppEdge a b) = O.text (el_ctor el) <+> ppr a <+> ppr b
+  ppr el@(BindEdge a) = O.text (el_ctor el) <+> ppr a
+  ppr el@(RevBindEdge a) = O.text (el_ctor el) <+> ppr a
 
 el_spans :: Lens' EdgeLabel [Span]
 el_spans = lens spget spset where
   spget (ArgEdge a b) = [a ^. s_span, b ^. s_span]
   spget (AppEdge a b) = [a ^. s_span, b ^. s_span]
   spget (BindEdge sp) = [sp]
+  spget (RevBindEdge sp) = [sp]
   spset (ArgEdge a b) (asp:bsp:[]) = ArgEdge (a & s_span .~ asp) (b & s_span .~ bsp)
   spset (AppEdge a b) (asp:bsp:[]) = AppEdge (a & s_span .~ asp) (b & s_span .~ bsp)
   spset (BindEdge _sp) [sp] = BindEdge sp
+  spset (RevBindEdge _sp) [sp] = BindEdge sp
 
 type NodeGr a = Gr.Gr ((NodeKey a, Int)) EdgeLabel
 type NodeState a = State (S.Set AppGroup) ([(Gr.Node, EdgeLabel)], [Gr.LEdge EdgeLabel])
@@ -240,6 +245,7 @@ el_ctor :: EdgeLabel -> String
 el_ctor (ArgEdge _ _) = "ArgEdge"
 el_ctor (AppEdge _ _) = "AppEdge"
 el_ctor (BindEdge _) = "BindEdge"
+el_ctor (RevBindEdge _) = "RevBindEdge"
 
 defTagField = T.pack $ Aeson.tagFieldName $ Aeson.sumEncoding Aeson.defaultOptions
 defContentsField = T.pack $ Aeson.contentsFieldName $ Aeson.sumEncoding Aeson.defaultOptions

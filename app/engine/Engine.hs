@@ -193,7 +193,7 @@ mk_pt_store dflags = (
                   . (
                       bg_bnd_app_map %~ (\m ->
                           foldr (\case 
-                              BindNamed i -> M.insertWith (<>) i next_names
+                              BindNamed i -> M.insertWith (<>) (i ^. s_payload) (map (i ^. s_span,) next_names) -- TODO rename next_names since here it coalesces into an AppGroup, a bit confusing
                               _ -> id
                             ) m fn_keys
                         )
@@ -235,10 +235,16 @@ mk_pt_store dflags = (
                           $ mconcat $ map arg_idents
                           $ drop 1
                           $ nodeChildren ast
-                   binder_store' = binder_store & (ps_binds %~ mappend BindGroups {
-                      _bg_arg_bnd_map = mempty,
-                      _bg_bnd_app_map = M.fromList $ map (,binder_ags) bindees
-                    })
+                   binder_store' = binder_store & (
+                      ps_binds %~ mappend (
+                          mempty & bg_bnd_app_map .~ (
+                              M.fromListWith (<>) [
+                                  (bindee ^. s_payload, map (bindee ^. s_span,) binder_ags)
+                                  | bindee <- bindees
+                                ]
+                            )
+                        )
+                    )
               in flip const (dflags, ast, binder_ags, binder_store) $ (
                   binder_ags -- <> next_names -- make binds be name boundaries
                   , binder_store' <> next_store
@@ -253,7 +259,7 @@ mk_pt_store dflags = (
                 if not within_app
                   then next_store & ps_app_groups %~ (
                       (ag_span_map %~ mappend (SegFlat [Spand (nodeSpan ast) next_ag]))
-                      . (ag_ident_map %~ (\m -> foldr (flip (M.insertWith (<>)) [next_ag]) m next_names')) -- up to 
+                      . (ag_ident_map %~ (\m -> foldr (\name -> M.insertWith (<>) (name ^. s_payload) [(name ^. s_span, next_ag)]) m next_names')) -- up to 
                     )
                   else next_store -- form appgroup and shove names into it
                 
@@ -283,8 +289,12 @@ pt_search dflags (PtStore {..}) cs_segs =
       nodes =
         (`evalState` 0) $
           return mempty
-          & mapState (state_step (map NKApp $ concat $ M.elems (_ps_app_groups ^. ag_ident_map)))
-          & mapState (state_step (map (NKBind . BindNamed) $ M.keys $ _ps_binds ^. bg_bnd_app_map))
+          & mapState (state_step (map NKApp $ concatMap (map snd) $ M.elems (_ps_app_groups ^. ag_ident_map)))
+          & mapState (state_step [
+              NKBind $ BindNamed $ Spand sp ident
+              | (ident, sp_ags) <- M.toList $ _ps_binds ^. bg_bnd_app_map
+              , (sp, _ag) <- sp_ags
+            ])
           & mapState (state_step (map NKBind $ M.elems $ _ps_binds ^. bg_arg_bnd_map))
         
       r0 = ([], [])
@@ -317,40 +327,49 @@ pt_search dflags (PtStore {..}) cs_segs =
       -- pt_search' :: Bool -> LIdentifier -> (Maybe Gr.Node, Gr (NodeKey a) ())
       pt_search' :: Either BindKey LIdentifier -> NodeState a
       pt_search' m_ident =
-        let (nk_sucs, m_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
-              Left bk ->
-                let (bindsp_ags, m_cs') = case bk of
-                      BindNamed fn_ident -> (
-                          maybeToList
-                          $ ((^. s_span) *** mappend (fromMaybe [] $ (_ps_binds ^. bg_bnd_app_map) M.!? fn_ident))
-                          <$> (_ps_app_groups ^. ag_ident_map) !?~ fn_ident
-                          , find_min_cs $ _s_span fn_ident
+        let step_to_ag = with_ag (pt_search' . Right)
+            (nk_sucs, m_cs) = case m_ident of -- trace (ppr_safe dflags m_ident) $ 
+              Left bk -> case bk of
+                BindNamed fn_ident -> (
+                    concat $ catMaybes $
+                      [
+                        map (\(_sp, ag) ->
+                            (
+                              (NKApp ag, BindEdge (fn_ident ^. s_span))
+                              , step_to_ag ag
+                            )
+                          )
+                          <$> (_ps_binds ^. bg_bnd_app_map) M.!? (fn_ident ^. s_payload)
+                        , map (\(sp, ag) ->
+                            (
+                              (NKApp ag, RevBindEdge sp)
+                              , step_to_ag ag
+                            )
+                          )
+                          <$> (_ps_app_groups ^. ag_ident_map) M.!? (fn_ident ^. s_payload)
+                      ]
+                    , find_min_cs $ fn_ident ^. s_span
+                  )
+                BindLam fn_span -> (
+                    map (\ag ->
+                          (
+                            (NKApp ag, BindEdge fn_span)
+                            , step_to_ag ag
+                          )
                         )
-                      BindLam fn_span -> (
-                          [(
-                              fn_span,
-                              segfind (_ps_app_groups ^. ag_span_map) fn_span
-                            )]
-                          , find_min_cs fn_span
-                        )
-                in (
-                    [
-                      ((NKApp ag, BindEdge bindsp), with_ag (pt_search' . Right) ag)
-                      | (bindsp, ags) <- bindsp_ags
-                      , ag <- ags
-                    ]
-                      -- $ M.toList $ M.restrictKeys nodes (S.fromList $ map NKApp )
-                    , m_cs'
+                      $ segfind (_ps_app_groups ^. ag_span_map) fn_span
+                    , find_min_cs fn_span
                   )
               Right ident -> (, find_min_cs $ _s_span ident) $
                   if 
-                     | Just (bnd, ags) <- (_ps_binds ^. bg_bnd_app_map) !?~ ident
-                     -> (
-                        map (
-                            (,AppEdge ident bnd) . NKApp
-                            &&& with_ag (pt_search' . Right)
-                          ) ags
-                      )
+                     | Just (bnd_ags) <- (_ps_binds ^. bg_bnd_app_map) M.!? (ident ^. s_payload)
+                     -> [
+                      (
+                          (NKApp ag, AppEdge ident (ident & s_span .~ bnd))
+                          , step_to_ag ag
+                        )
+                      | (bnd, ag) <- bnd_ags
+                     ]
                      | Just (arg, bk) <- (_ps_binds ^. bg_arg_bnd_map) !?~ ident
                      -- , Nothing <- (nodes !? (NKApp ag)) >>= (flip match gr) -- crap, can't build the graph from the bottom up because I need to anti-cycle, so children will have to do the matching
                      -> [((NKBind bk, ArgEdge ident arg), pt_search' (Left bk))]
@@ -423,7 +442,12 @@ main = do
           -- bound'' :: STree.STree [STInterval.Interval (Locd ())] (Locd ())
           -- bound'' = STree.fromList $ concatMap (map (seg2intervalish . (bindkey_span &&& const ())) . M.elems . (^. ps_fns)) pts
           
-          bound_fns' = concatMap (map seg2intervalish . map (uncurry Spand . (_s_span &&& id)) . M.keys . (^. (ps_binds . bg_bnd_app_map))) pts
+          bound_fns' = [
+              seg2intervalish $ Spand sp (Spand sp ident)
+              | pt <- pts
+              , (ident, sp_ags) <- M.toList $ pt ^. (ps_binds . bg_bnd_app_map)
+              , (sp, _ag) <- sp_ags
+            ] -- need to double up the Spand bcause of the SegmentTree query function being dumb
           bound_fns :: STree.STree [STInterval.Interval (Locd LIdentifier)] (Locd LIdentifier)
           bound_fns = STree.fromList bound_fns'
           
