@@ -2,8 +2,9 @@ import { Map, Set } from 'immutable'
 import { SPANTY } from './Lang'
 
 class AssertionError extends Error {}
-export function assert(p, q) {
+export function assert(p, q = '') {
 	if(!p) throw new AssertionError(q);
+	return true;
 }
 function zipadd(x, y) {
 	if(x === null || y === null)

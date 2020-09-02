@@ -4,92 +4,12 @@ import hljs from 'highlight.js/lib/core'
 import hs from 'highlight.js/lib/languages/haskell'
 import IntervalTree from '@flatten-js/interval-tree'
 import Snip from './Snip'
+import { mk_span_chars, mk_parsetree } from './parsetree'
 import { span_contains, map_intersect, candidate, compare } from './Util'
 import { Set, Map } from 'immutable'
 import { MinHeap } from 'mnemonist'
 
 hljs.registerLanguage('haskell', hs);
-
-function ivl_split(t) {
-	// ISpan 
-	
-	// create disjoint open intervals with pooled keys
-	// accept list with two intervals, for fast identification of disjoint
-	// please disregard how much this function sucks
-	const [a, b] = t;
-	const ck = a[2].concat(b[2]);
-	if(a[0] === b[0] && a[1] === b[1]) {
-		// equal
-		return [[a[0], a[1], ck]];
-	}
-	else if(a[0] > b[1] && a[1] > b[1] || a[0] < b[0] && a[1] < b[0]) {
-		// disjoint
-		return t;
-	}
-	else if(a[0] > b[0] && a[1] < b[1]) {
-		// a < b
-		return [
-			[b[0], a[0], b[2]],
-			[a[0], a[1], ck],
-			[a[1], b[1], b[2]]
-		]
-	}
-	else if(a[0] < b[0] && a[1] > b[1]) {
-		// a > b
-		return [
-			[a[0], b[0], a[2]],
-			[b[0], b[1], ck],
-			[b[1], a[1], a[2]]
-		]
-	}
-	else if(a[0] === b[0]) {
-		// left aligned
-		if(a[1] < b[1]) {
-			return [
-				[a[0], a[1], ck],
-				[a[1], b[1], b[2]]
-			];
-		}
-		else {
-			return [
-				[b[0], b[1], ck],
-				[b[1], a[1], a[2]]
-			];
-		}
-	}
-	else if(a[1] === b[1]) {
-		// right aligned
-		if(a[0] < b[0]) {
-			return [
-				[a[0], b[0], a[2]],
-				[b[0], b[1], ck]
-			];
-		}
-		else {
-			return [
-				[b[0], a[0], b[2]],
-				[a[0], a[1], ck]
-			];
-		}
-	}
-	else {
-		// nonempty intersect, neither subset
-		if(a[0] < b[0]) {
-			return [
-				[a[0], b[0], a[2]],
-				[b[0], a[1], ck],
-				[a[1], b[1], b[2]]
-			]
-		}
-		else {
-			return [
-				[b[0], a[0], b[2]],
-				[a[0], b[1], ck],
-				[b[1], a[1], a[2]]
-			]
-		}
-	}
-}
 
 // function snip(src, spans) {}
 
@@ -132,9 +52,9 @@ export default class extends React.Component {
 			// src_snips: [], // [(ColSpan, ?(Map Span k))] // intermediate state so that re-snipping and re-rendering is decoupled from the props upstairs changing inconsequentially
 			root_container_el: null,
 			parsetree: null, // 
-			snip_focuses: null
+			snip_focuses: null,
+			hljs_result: null
 		};
-		this.src_ref = React.createRef();
 	}
 	componentDidUpdate(pprops, pstate) {
 		const diff = {
@@ -144,7 +64,7 @@ export default class extends React.Component {
 			hljs_result: pstate.hljs_result !== this.state.hljs_result,
 		};
 		if(diff.body) {
-			this.setState({ hljs_result: hljs.highlight('haskell', this.props.body) });
+			this.setState({ hljs_result: hljs.highlight('haskell', this.props.body.raw) });
 		}
 		if(diff.hljs_result || diff.spans) {
 			this.update_parsetree();
@@ -157,24 +77,14 @@ export default class extends React.Component {
 	}
 	get_src_snips() {
 		if(this.props.body != null && this.props.spans != null) {
-			const cum_line_chars = this.props.body.split('\n').reduce((acc, l) => acc.push(acc[acc.length - 1] + l.length + 1) === -1 || acc, [0]); // +1 for \n, faster push than concat
-			// spans.sort(([la, ca], [lb, cb]) => la > lb || (la === lb && ca > cb));
-			// const spans = this.state.st_at.map(e => this.state.st_gr.jsg_gr.get(e)[1])
-			// 	.filter(l => !!l.length)[0]
-			// 	.map(([_, sp]) => sp)
-			const span_chars = this.props.spans.map(
-				([span, k]) => {
-					const [_src, [ll, lc], [rl, rc]] = span;
-					return { key: [cum_line_chars[ll - 1] + lc - 1, cum_line_chars[rl - 1] + rc - 1], value: [span, k] };
-				}
-			); // :: [(Int, Int, (Span, k))]
 			// if(this.props.spans.length > 100) return [];
+			const span_chars = mk_span_chars(this.props.body.lines, this.props.spans);
 			
 			const I = []; // list of disjoint merged intervals
 			Set().withMutations(vals => {
 				const ends = new MinHeap((a, b) => compare(a.key[1], b.key[1]));
 				const starts = span_chars.sort((a, b) => compare(a.key[0], b.key[0]));
-				starts.push({ key: [Infinity, Infinity], value: null });
+				starts.push({ key: [Infinity, Infinity], value: null }); // infinity node to help tie all the ends at the... end
 				
 				let last_il = null;
 				for(const start of starts) {
@@ -194,7 +104,7 @@ export default class extends React.Component {
 					vals.add(start.value);
 				}
 				// debugger;
-				console.log(I);
+				// console.log(I);
 				// I.pop(); // remove the dummy between the last node and the infinity node
 			});
 			
@@ -216,73 +126,14 @@ export default class extends React.Component {
 				return [];
 			}
 		}
+		else return null;
 	}
 	
 	update_parsetree() {
-		if(this.props.body === null)
-			return null;
-		
 		const src_snips = this.get_src_snips();
-		function rt(tree) {
-			function rt_(t, n) {
-				// t :: KTree := string | (kind: String, children: [KTree])
-				if(typeof t === 'string')
-					return [t, n + t.length];
-				else {
-					const [eles, n_] = t.children.reduce(([acc, n_], t_) => {
-						const [ele, n__] = rt_(t_, n_);
-						acc.push(ele);
-						return [acc, n__];
-					}, [[], n]);
-					return [<span className={t.kind && `hljs-${t.kind}`} key={n}>{eles}</span>, n_];
-				}
-			}
-			return rt_(tree, 0)[0];
-		}
-		
-		const r = (hl_t, snip_idx, n) => {
-			// KTree := string | { kind: String, children: [KTree] }
-			// KTree -> Int -> Int -> ([KTree], Int)
-			if(typeof hl_t === 'string') {
-				// console.log(src_snips, snip_idx);
-				const rightdist = src_snips[snip_idx][0][1] - n;
-				if(rightdist <= hl_t.length) {  // TODO check openness of span boundaries
-					// console.log(snip_idx, next_n, src_snips[snip_idx]);
-					// need to cut this tag in half
-					const next = r(hl_t.slice(rightdist), snip_idx + 1, src_snips[snip_idx][0][1]);
-					// const partial_t_ = push_leaf(, partial_t);
-					const here = hl_t.slice(0, rightdist); // mksnip(rt(partial_t_));
-					next[0].unshift(here); // push new tag to start
-					return next;
-				}
-				else {
-					return [[hl_t], [snip_idx, n + hl_t.length]];
-				}
-			}
-			else {
-				let snip_idx_ = snip_idx;
-				let n_ = n;
-				const root_ctor = () => ({ kind: hl_t.kind, children: [] });
-				const roots = [root_ctor()];
-				for(const c of hl_t.children) {
-					const next = r(c, snip_idx_, n_);
-					const next_trees = next[0];
-					[snip_idx_, n_] = next[1];
-					for(let t = 0; t < next_trees.length; t++) {
-						if(t > 0)
-							roots.push(root_ctor());
-						
-						roots[roots.length - 1].children.push(next_trees[t]);
-					}
-				}
-				return [roots, [snip_idx_, n_]];
-			}
-		}
-		if(this.state.hljs_result != null) {
-			const [ts, _] = r(this.state.hljs_result.emitter.root, 0, 0);
-			
+		if(src_snips !== null && this.state.hljs_result !== null) {
 			this.setState({
-				parsetree: ts.map((t, i) => [rt(t), src_snips[i][0], src_snips[i][1]])
+				parsetree: mk_parsetree(this.state.hljs_result.emitter.root, src_snips)
 			});
 		}
 	}
@@ -291,7 +142,7 @@ export default class extends React.Component {
 			return null;
 		else return <span>{this.state.parsetree.map(([txt, sp, sp_ks], k) => <span key={k}>
 			{
-				/* need to be very careful with <Snip />. As a PureComponent, all */
+				/* need to be very careful with <Snip />. As a PureComponent, none of the inputs can be closures (in any way that influences Snip rendering, that is) */
 				sp_ks == null
 					? txt
 					: <Snip
@@ -332,12 +183,16 @@ export default class extends React.Component {
 	// snipClickHandler = (e, ks) => this.props.onSnipClick(this.candidate(ks));
 	// the trickiest part is to figure out a way to distinguish the type of the span of the "reason" given that the list of elements coming in are completely agnostic to that. So find some way to mark it, plus add all the accompanying data in an elegant way. Otherwise, just pushing in keys of all the nodes that these are pointing to, hopefully without intersection (ah wait. There will be intersection with duplicated names. So... maybe not a map? As if I needed it to be unique anyways. multimap? eh. I expect them to be unique to each span. So no. No multimap. Really the spans should be their own keys. I just don't like to serialize and deserialize the data just for mapping efficiency. Although Immutable Maps can do better than that. So just key based on the straight spans. yeah.)
 	
-	render = () => 
-		<div ref={this.rootRefChangeHandler} id="src_container">
+	render = () => <div>
+		<section>
+			{this.props.ctx_renderer(this.state.hljs_result)}
+		</section>
+		<section ref={this.rootRefChangeHandler} className="src-container">
 			<pre>
-				<code ref={this.src_ref} id="src_root" className="language-haskell hljs">
+				<code id="src_root" className="language-haskell hljs">
 					{ this.render_highlight() }
 				</code>
 			</pre>
-		</div>
+		</section>
+	</div>
 }
