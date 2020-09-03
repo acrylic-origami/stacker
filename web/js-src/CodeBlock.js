@@ -5,13 +5,14 @@ import hs from 'highlight.js/lib/languages/haskell'
 import IntervalTree from '@flatten-js/interval-tree'
 import Snip from './Snip'
 import { mk_span_chars, mk_parsetree } from './parsetree'
-import { span_contains, map_intersect, candidate, compare } from './Util'
+import { map_intersect, compare, any, list1eq } from './Util'
+import { span_contains, candidate } from './Lang'
 import { Set, Map } from 'immutable'
 import { MinHeap } from 'mnemonist'
 
 hljs.registerLanguage('haskell', hs);
 
-// function snip(src, spans) {}
+// function snip(src, span_ks) {}
 
 export default class extends React.Component {
 	constructor(props) {
@@ -30,7 +31,7 @@ export default class extends React.Component {
 		// I probably need to push a semantics to the keys somehow. Mainly I need to separate reasons from actual attributes, that's the least difference. It also makes a difference when it's bound to an argument or another binding, which leaks a bit of the abstraction into this module, which should be a dumb renderer, just needing to preserve keys
 		// then that's it, just an interfacing contract to put the key first, then the span, in a tuple
 		/*
-		I need to know if the span is a node, or part of an edge. We can just enumerate them: the spans can be:
+		I need to know if the span is a node, or part of an edge. We can just enumerate them: the span_ks can be:
 		- elements in appgroups
 			- .. that point to arguments (arg edge meta)
 			- .. that point to binds (app edge meta)
@@ -42,8 +43,8 @@ export default class extends React.Component {
 		*/
 		/*
 		props :: {
-			body: String,
-			spans: [(Span, k)],
+			src: String,
+			span_ks: [(Span, k)],
 			should_scroll_to: [k] -> Bool,
 			wrap_snip: String -> [k] -> React.Component
 		}
@@ -58,15 +59,15 @@ export default class extends React.Component {
 	}
 	componentDidUpdate(pprops, pstate) {
 		const diff = {
-			body: pprops.body !== this.props.body,
-			spans: pprops.spans !== this.props.spans,
+			src: pprops.src !== this.props.src,
+			span_ks: pprops.span_ks !== this.props.span_ks,
 			snip_focuses: pstate.snip_focuses !== this.state.snip_focuses,
 			hljs_result: pstate.hljs_result !== this.state.hljs_result,
 		};
-		if(diff.body) {
-			this.setState({ hljs_result: hljs.highlight('haskell', this.props.body.raw) });
+		if(diff.src) {
+			this.setState({ hljs_result: hljs.highlight('haskell', this.props.src.body.raw) });
 		}
-		if(diff.hljs_result || diff.spans) {
+		if(diff.hljs_result || diff.span_ks) {
 			this.update_parsetree();
 		}
 		// requestAnimationFrame(e => {
@@ -76,9 +77,9 @@ export default class extends React.Component {
 		// }); // assume synchronous
 	}
 	get_src_snips() {
-		if(this.props.body != null && this.props.spans != null) {
-			// if(this.props.spans.length > 100) return [];
-			const span_chars = mk_span_chars(this.props.body.lines, this.props.spans);
+		if(this.props.src != null && this.props.span_ks != null) {
+			// if(this.props.span_ks.length > 100) return [];
+			const span_chars = mk_span_chars(this.props.src.body.lines, this.props.span_ks);
 			
 			const I = []; // list of disjoint merged intervals
 			Set().withMutations(vals => {
@@ -115,9 +116,9 @@ export default class extends React.Component {
 				const S = [[[0, I[0].key[0]], null]];
 				for(let i = 0; i < I.length; i++) {
 					S.push(
-						[[I[i].key[0], I[i].key[1]], Map(I[i].value)],
+						[[I[i].key[0], I[i].key[1]], I[i].value],
 					);
-					if(i >= I.length - 1 || I[i].key[1] !== I[i + 1].key[0]) // filter zero-length spans
+					if(i >= I.length - 1 || I[i].key[1] !== I[i + 1].key[0]) // filter zero-length span_ks
 						S.push([[I[i].key[1], i >= I.length - 1 ? undefined : I[i + 1].key[0]], null])
 				}
 				return S;
@@ -152,7 +153,7 @@ export default class extends React.Component {
 						ks={sp_ks}
 						key={sp.toString()}
 						className={
-							sp_ks.has(this.state.snip_focuses)
+							this.state.snip_focuses !== null && any(([sp, _ks]) => list1eq(sp, this.state.snip_focuses), sp_ks)
 							? 'focused'
 							: ''
 						}
@@ -171,6 +172,7 @@ export default class extends React.Component {
 				const c = candidate(sp_ks);
 				if(c != null) {
 					const [sp, _k] = c;
+					console.log(c);
 					this.setState({ snip_focuses: sp })
 				}
 				break;
@@ -181,18 +183,23 @@ export default class extends React.Component {
 	}
 	rootRefChangeHandler = root_container_el => this.setState({ root_container_el });
 	// snipClickHandler = (e, ks) => this.props.onSnipClick(this.candidate(ks));
-	// the trickiest part is to figure out a way to distinguish the type of the span of the "reason" given that the list of elements coming in are completely agnostic to that. So find some way to mark it, plus add all the accompanying data in an elegant way. Otherwise, just pushing in keys of all the nodes that these are pointing to, hopefully without intersection (ah wait. There will be intersection with duplicated names. So... maybe not a map? As if I needed it to be unique anyways. multimap? eh. I expect them to be unique to each span. So no. No multimap. Really the spans should be their own keys. I just don't like to serialize and deserialize the data just for mapping efficiency. Although Immutable Maps can do better than that. So just key based on the straight spans. yeah.)
+	// the trickiest part is to figure out a way to distinguish the type of the span of the "reason" given that the list of elements coming in are completely agnostic to that. So find some way to mark it, plus add all the accompanying data in an elegant way. Otherwise, just pushing in keys of all the nodes that these are pointing to, hopefully without intersection (ah wait. There will be intersection with duplicated names. So... maybe not a map? As if I needed it to be unique anyways. multimap? eh. I expect them to be unique to each span. So no. No multimap. Really the span_ks should be their own keys. I just don't like to serialize and deserialize the data just for mapping efficiency. Although Immutable Maps can do better than that. So just key based on the straight span_ks. yeah.)
 	
-	render = () => <div>
-		<section>
+	render = () => <section id="main_content">
+		<section id="context_bar">
 			{this.props.ctx_renderer(this.state.hljs_result)}
 		</section>
-		<section ref={this.rootRefChangeHandler} className="src-container">
-			<pre>
-				<code id="src_root" className="language-haskell hljs">
-					{ this.render_highlight() }
-				</code>
-			</pre>
+		<section ref={this.rootRefChangeHandler} id="src_root_container">
+			<header>
+				<h1>{this.props.src && this.props.src.path}</h1>
+			</header>
+			<section className="src-container">
+				<pre>
+					<code id="src_root" className="language-haskell hljs">
+						{ this.render_highlight() }
+					</code>
+				</pre>
+			</section>
 		</section>
-	</div>
+	</section>
 }

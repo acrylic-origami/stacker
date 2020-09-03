@@ -14,6 +14,28 @@ a.snip {
 	cursor:pointer;
 	color:inherit;
 }
+a.unpointer {
+	cursor:auto;
+}
+
+ul.flatlist, ol.flatlist {
+	list-style-type:none;
+	margin:0;
+	padding:0;
+}
+	ul.flatlist > li, ol.flatlist > li {
+		margin:0;
+		padding:0;
+	}
+	
+.src-container {
+	overflow:scroll;
+	position:relative;
+}
+.ctx-snip .hljs {
+	overflow:hidden;
+}
+
 #main_root {
 	display:flex;
 	flex-direction:column;
@@ -21,97 +43,104 @@ a.snip {
 	height:100%;
 	width:100%;
 }
-	#main_root > section {
-		
+	#main_content {
+		height:100%;
+		flex-shrink:0;
+		display:flex;
+		flex-direction:row;
+		align-content:stretch;
 	}
-	#src_section {
-		/*flex-shrink:0;*/
-		flex-grow:2;
-	}
-		.src-container {
-			overflow:scroll;
-			position:relative;
-		}
-		#src_root, code.hljs {
-			position:relative;
-			display:block;
-			font-family: monospace;
-		}
-
-		ul.flatlist, ol.flatlist {
-			list-style-type:none;
-			margin:0;
-			padding:0;
-		}
-			ul.flatlist > li, ol.flatlist > li {
-				display:inline-block;
-				margin:0;
-				padding:0;
-			}
-
-		.ctx-snip > h3, .ctx-snip > h4, .ctx-snip > h5 {
-			margin:0;
-			padding:0 0.4em;
-			font-size:1em;
-		}
-		.ctx-snip .src-container {
-			overflow:hidden;
-		}
-
-		#edge_ctx_container, #next_nodes_container {
-			white-space:nowrap;
-			overflow-x:scroll;
-			flex-shrink:0;
-		}
-			#edge_ctx_container > header > h1, #edge_ctx_container > header > h2 {
-				text-transform:uppercase;
-			}
-			#edge_ctx_container > header > h1 {
-				margin:0;
-				padding:0 0.4em;
-				font-size:1em;
-			}
-			#edge_ctx_container > header > h2 {
-				margin:0;
-				padding:0 0.4em;
-				font-size:0.7em;
-			}
-
-		#scc_section {
+		#context_bar {
+			display:flex;
+			flex-direction:row;
+			flex-grow:0;
+			align-content:stretch;
 			
+			font-size:0.8em;
 		}
-			#scc_section h1 {
+		#src_root_container {
+			min-width:30em;
+			display:flex;
+			flex-direction:column;
+			align-content:stretch;
+		}
+			#src_root, code.hljs {
+				position:relative;
+				display:block;
+				font-family: monospace;
+			}
+
+			.ctx-snip > h3, .ctx-snip > h4, .ctx-snip > h5 {
 				margin:0;
-				padding:0.4em;
+				padding:0 0.4em;
 				font-size:1em;
 			}
-			#scc_select {
-				overflow-x:scroll;
-				list-style-type:none;
-				margin:0;
-				padding:0;
+			.ctx-snip .src-container {
+				overflow:hidden;
 			}
-				#scc_select > li {
-					margin:0;
-					padding:1.2em;
-					display:inline-block;
+
+			#edge_ctx_container, #next_nodes_container {
+				white-space:nowrap;
+				overflow-y:scroll;
+				flex-shrink:0;
+			}
+				#edge_ctx_container > header > h1, #edge_ctx_container > header > h2 {
+					text-transform:uppercase;
 				}
-					#scc_select > li h2 {
-						
+				#edge_ctx_container > header > h1 {
+					margin:0;
+					padding:0 0.4em;
+					font-size:1em;
+				}
+				#edge_ctx_container > header > h2 {
+					margin:0;
+					padding:0 0.4em;
+					font-size:0.7em;
+				}
+				
+				#edge_ctx, #next_nodes, #history {
+					width:40em;
+					padding:0.6em;
+				}
+				#edge_ctx > li, #next_nodes > li, #history > li {
+					padding:0.6em;
+				}
+
+			#scc_section {
+				
+			}
+				#scc_section h1 {
+					margin:0;
+					padding:0.4em;
+					font-size:1em;
+				}
+				#scc_select {
+					overflow-x:scroll;
+					list-style-type:none;
+					margin:0;
+					padding:0;
+				}
+					#scc_select > li {
+						margin:0;
+						padding:1.2em;
+						display:inline-block;
 					}
-			
-			.snip-1 {
-				background-color:rgba(0, 255, 0, 0.2);
-			}
-			.snip-2 {
-				background-color:rgba(0, 255, 0, 0.4);
-			}
-			.snip-3 {
-				background-color:rgba(0, 255, 0, 0.6);
-			}
-			.snip-4 {
-				background-color:rgba(0, 255, 0, 0.8);
-			}
-			.snip.focused {
-				background-color:red;
-			}
+						#scc_select > li h2 {
+							
+						}
+				
+				.snip-1 {
+					background-color:rgba(0, 255, 0, 0.2);
+				}
+				.snip-2 {
+					background-color:rgba(0, 255, 0, 0.4);
+				}
+				.snip-3 {
+					background-color:rgba(0, 255, 0, 0.6);
+				}
+				.snip-4 {
+					background-color:rgba(0, 255, 0, 0.8);
+				}
+				.snip.focused {
+					background-color:red;
+				}

@@ -1,7 +1,8 @@
 import React from 'react'
 import Q from 'q'
 import { Map, Set, List } from 'immutable'
-import { id, map_intersect, candidate, assert, any, list1eq } from './Util'
+import { id, map_intersect, assert, any, list1eq } from './Util'
+import { candidate, nk_span, repr_el_span, el2spk, span_contains } from './Lang'
 import CodeBlock from './CodeBlock'
 import { SPANTY, NK2ENV } from './Lang'
 import { NUM_SNIP_DEPTH_COLORS } from './const.js'
@@ -12,32 +13,33 @@ function span2key(x) {
 	return x.toString();
 	// return x.map(x_ => x_.toString()).join('_');
 }
-function ag2spans(ag) {
-	// ag represented as edges: [(Node, EdgeLabel)]
-	const acc = [];
+
+function wrap_snip(txt, sp_ks) {
+	// console.log(sp_ks);
+	const k_counts = sp_ks.reduce((acc, [sp, [spty, _el]]) => acc.update(spty, 0, i => i + 1), Map());
+	return <span className={k_counts.map((cnt, k) => `snip-${k}-${Math.min(NUM_SNIP_DEPTH_COLORS, cnt)}`).join(' ')}>{txt}</span>
+}
+
+function ag2spks(ag) {
+	const ctxs = [];
+	const nodes = [];
 	for(const fw_edge of ag) {
 		// console.log(fwedge, ag)
 		const el = fw_edge[1];
 		switch(el.tag) {
 			case 'ArgEdge':
-				acc.push([el.contents[0], [SPANTY.NODE.AG_TO_ARG, fw_edge]]);
-				acc.push([el.contents[1], [SPANTY.NODE.ARG, fw_edge]]);
+				nodes.push([el.contents[0], [SPANTY.NODE.AG_TO_ARG, fw_edge]]);
+				ctxs.push([el.contents[1], [SPANTY.CTX.ARG, fw_edge]]);
 				break;
 			case 'AppEdge':
-				acc.push([el.contents[0], [SPANTY.NODE.AG_TO_BIND, fw_edge]]);
-				acc.push([el.contents[1], [SPANTY.CTX.BIND_FROM_AG, fw_edge]]);
+				nodes.push([el.contents[0], [SPANTY.NODE.AG_TO_BIND, fw_edge]]);
+				ctxs.push([el.contents[1], [SPANTY.CTX.BIND_FROM_AG, fw_edge]]);
 				break;
 			default:
 				throw new Error(`Unexpected EdgeLabel exiting AppGroup: ${el.tag}`);
 		}
 	}
-	return acc;
-}
-
-function wrap_snip(txt, sp_ks) {
-	// console.log(sp_ks);
-	const k_counts = sp_ks.reduce((acc, [spty, _el]) => acc.update(spty, 0, i => i + 1), Map());
-	return <span className={k_counts.map((cnt, k) => `snip-${k}-${Math.min(NUM_SNIP_DEPTH_COLORS, cnt)}`).join(' ')}>{txt}</span>
+	return { ctxs, nodes };
 }
 
 export default class extends React.Component {
@@ -80,20 +82,31 @@ export default class extends React.Component {
 		console.log(e);
 	}
 	snipClickHandler = (e, sp_ks) => {
+		e.stopPropagation();
 		// s :: (Span, Map Span (SPANTY, FWEdge)) // first span is the span of the mini region that was clicked
 		
 		// const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding
 		// const which = ; // , which = sp_ks.filter((_k, sp) => list1eq(sp, which_sp)).first()[1];
 		const c = candidate(sp_ks)[1][1];
+		// console.log(sp_ks, c);
 		this.setState(({ at_idx, at_history }) => ({
 			at_idx: Math.min(at_idx + 1, at_history.size),
-			at_history: at_history.push(c)
+			at_history: at_history.push(c),
+			scroll_to: nk_span(this.state.gr.get(c[0])[0][0])
 		}));
 		
 		// switch(which[0]) {
 		// 	case SPANTY.NODE.AG_TO_ARG:
 		// 		break;
 		// }
+	}
+	ctxClickHandler = (e, scroll_to) => {
+		e.preventPropagation();
+		this.setState({ scroll_to });
+	}
+	historyClickHandler = (e, at_idx) => {
+		e.preventPropagation();
+		this.setState({ at_idx });
 	}
 	componentDidUpdate(pprops, pstate) {
 		const diff = {
@@ -130,10 +143,10 @@ export default class extends React.Component {
 		}
 	}
 	should_scroll_to = (sp_ks) =>
-		this.state.at_idx < this.state.at_history.length
+		this.state.scroll_to
 		&& any(
-			k => list1eq(k, this.state.gr.get(this.state.at_history.get(this.state.at_idx)[0])[0][0].contents)
-			, sp_ks.keySeq()
+			k => span_contains(k, this.state.scroll_to)
+			, sp_ks.map(([sp, _k]) => sp)
 		)
 	/*
 		<section id="scc_section">
@@ -147,15 +160,15 @@ export default class extends React.Component {
 			}</ul>
 		</section>
 	*/
-	mk_snip_preview = (hljs_result, sp) => {
-		const [isp] = mk_span_chars(this.state.src.body.lines, [[sp, null]]);
+	mk_snip_preview = (hljs_result, sp, k = [null]) => {
+		const [isp] = mk_span_chars(this.state.src.body.lines, [[sp, k]]);
 		const subt = slice_parsetree(hljs_result.emitter.root, [isp.key[0] - 50, isp.key[1] + 50]);
 		const left = Math.min(isp.key[0], 50);
 		const right = left + (isp.key[1] - isp.key[0]);
 		// debugger;
 		return mk_parsetree(subt, [
 			[[0, left], null],
-			[[left, right], '<DUMMY>'],
+			[[left, right], isp.value[1]],
 			[[right, Infinity], null]
 		]);
 	}
@@ -164,49 +177,75 @@ export default class extends React.Component {
 			&& (() => {
 				const [node, el] = this.state.at_history.get(this.state.at_idx);
 				const rarr = String.fromCharCode(0x2192);
-				return <section id="edge_ctx_container">
-					<header>
-						<h1>{ el.tag }</h1>
-						<h2>
-							{{
-								ArgEdge: "App group " + rarr + " Argument " + rarr + " Binding",
-								AppEdge: "App group " + rarr + " Binding " + rarr + " RHS",
-								BindEdge: "Binding " + rarr + " Callsite",
-								RevBindEdge: "Binding " + rarr + " RHS",
-							}[el.tag]}
-						</h2>
-					</header>
-					<ul id="edge_ctx" className="flatlist">
-						{
-							this.state.src !== null && hljs_result !== null
-							&& (() => {
-								switch(el.tag) {
-									case 'ArgEdge':
-										return el.contents.map((sp, i) => [['Use site', 'Bindsite'][i], sp]);
-										break;
-									case 'AppEdge':
-										return el.contents.map((sp, i) => [['Callsite', 'Bindsite'][i], sp]);
-										break;
-									case 'BindEdge':
-										return [['Callsite', el.contents]];
-										break;
-									case 'RevBindEdge':
-										return [['Bindsite', el.contents]];
-										break;
-								}
-							})().map(([name, sp]) => {
-								const preview = this.mk_snip_preview(hljs_result, sp);
-								return <CtxSnip
-									name={name}
-									filename={this.state.filelist[sp[0]]}
-									span={sp.slice(1)}
-									preview={preview}
-									key={sp.toString()}
-								>
-								</CtxSnip>;
-							})
-						}
-					</ul>
+				return <section>
+					<section id="edge_ctx_container">
+						<header>
+							<h1>{ el.tag }</h1>
+							<h2>
+								{{
+									ArgEdge: "App group " + rarr + " Argument " + rarr + " Binding",
+									AppEdge: "App group " + rarr + " Binding " + rarr + " RHS",
+									BindEdge: "Binding " + rarr + " Callsite",
+									RevBindEdge: "Binding " + rarr + " RHS",
+								}[el.tag]}
+							</h2>
+						</header>
+						<ul id="edge_ctx" className="flatlist">
+							{
+								this.state.src !== null && hljs_result !== null
+								&& (() => {
+									switch(el.tag) {
+										case 'ArgEdge':
+											return el.contents.map((sp, i) => [['Use site', 'Bindsite'][i], sp]);
+											break;
+										case 'AppEdge':
+											return el.contents.map((sp, i) => [['Callsite', 'Bindsite'][i], sp]);
+											break;
+										case 'BindEdge':
+											return [['Callsite', el.contents]];
+											break;
+										case 'RevBindEdge':
+											return [['Bindsite', el.contents]];
+											break;
+									}
+								})().map(([name, sp]) => 
+									<CtxSnip
+										onClick={this.historyClickHandler}
+										onSnipClick={this.historyClickHandler}
+										name={name}
+										filename={this.state.filelist[sp[0]]}
+										span={sp}
+										preview={this.mk_snip_preview(hljs_result, sp)}
+										key={sp.toString()}
+									>
+									</CtxSnip>
+								)
+							}
+						</ul>
+					</section>
+					<section>
+						<header>
+							<h1>History</h1>
+						</header>
+						<ul className="flatlist" id="history">
+							{
+								this.state.src && hljs_result
+								&& this.state.at_history.map((at, i) => 
+									this.state.gr.has(at[0])
+									&& (() => {
+										const at_sp = nk_span(this.state.gr.get(at[0])[0][0]);
+										return <CtxSnip
+											name={at[1][0]}
+											filename={this.state.filelist[at_sp[0]]}
+											span={at_sp}
+											preview={this.mk_snip_preview(hljs_result, at_sp, at[0])}
+											key={at_sp.toString()}
+										/>;
+									})()
+								).reverse()
+							}
+						</ul>
+					</section>
 				</section>
 			})()
 		, <section id="next_nodes_container">
@@ -216,117 +255,132 @@ export default class extends React.Component {
 						&& this.state.src !== null
 						&& hljs_result !== null
 						&& (() => {
-							const [node, el] = this.state.at_history.get(this.state.at_idx);
-							const [[next_nk, next_cs_id], next_edges] = this.state.gr.get(node);
+							const at = this.state.at_history.get(this.state.at_idx);
+							const [_n, el] = at;
+							const { nodes } = this.fw_edge2spks(at);
 							
-							const ctxsnips = (() => {
+							const nodes_ = (() => {
 								switch(el.tag) {
 									case 'ArgEdge':
-										return next_edges.map(([n, el_]) =>
-											assert(el_.tag === 'BindEdge' || el_.tag === 'RevBindEdge')
-											&& [
+										console.log(nodes, at)
+										return nodes.map((spk) => {
+											const [_sp, [_ty, [_n, el_]]] = spk;
+											assert(el_.tag === 'BindEdge' || el_.tag === 'RevBindEdge', `Unexpected ${el_.tag}`)
+											return [
 												{
 													BindEdge: 'Callsite',
 													RevBindEdge: 'Binding RHS'
 												}[el_.tag],
-												n,
-												el_.contents
+												spk
 											]
-										);
+										});
 										break;
 									case 'AppEdge':
 									case 'BindEdge':
 									case 'RevBindEdge':
-										return next_edges.map(([n, el_]) =>
-											assert(el_.tag === 'AppEdge' || el_.tag === 'ArgEdge')
-											&& [
+										return nodes.map((spk) => {
+											const [_sp, [_ty, [_n, el_]]] = spk;
+											assert(el_.tag === 'AppEdge' || el_.tag === 'ArgEdge', `Unexpected ${el_.tag}`)
+											return [
 												{
-													AppEdge: 'Value Bindsite',
-													ArgEdge: 'Arg Bindsite'
+													AppEdge: 'Value Callsite',
+													ArgEdge: 'Arg Callsite'
 												}[el_.tag],
-												n,
-												el_.contents[1]
+												spk
 											]
-										);
+										});
 										break;
 								}
 							})();
-							return ctxsnips.map(([name, gr_idx, sp]) => {
-								const preview = this.mk_snip_preview(hljs_result, sp);
+							console.log(nodes_);
+							return nodes_.map(([name, sp_k], i) => {
+								const [sp, [_ty, [n, el]]] = sp_k;
 								return <CtxSnip
-									onClick={this.ctxSnipClickHandler}
-									name={name}
-									filename={this.state.filelist[sp[0]]}
-									span={sp.slice(1)}
-									key={gr_idx}
-									preview={preview}
-									click_key={gr_idx /* to be returned via onclick */}
-								/>
+										onClick={this.ctxSnipClickHandler}
+										click_key={sp}
+										onSnipClick={this.snipClickHandler}
+										name={name}
+										filename={this.state.filelist[sp[0]]}
+										span={sp}
+										key={`${sp.toString()}-${n}=${i}`}
+										preview={this.mk_snip_preview(hljs_result, sp, [sp_k])}
+									/>
 							})
 						})()
 					}
 				</ul>
 			</section>
 	]
-	render = () => <div onKeyUp={this.keyPressHandler} id="main_root">
-		<section id="src_section">
-			<CodeBlock
-				ctx_renderer={this.render_ctx_bar}
-				body={this.state.src && this.state.src.body}
-				spans={this.state.at_idx < this.state.at_history.size && this.state.gr && (() => {
-					const at = this.state.at_history.get(this.state.at_idx);
-					const [node, el] = at;
-					const acc = [];
-					// spans :: [(Span, (SPANTY, FWEdge))]
-					if(this.state.gr.has(node)) {
-						const [[next_nk, next_cs_id], next_edges] = this.state.gr.get(node);
-						const nk_span = next_nk.tag === 'NKBind' ? next_nk.contents.contents : next_nk.contents;
-						acc.push([nk_span, [NK2ENV.get(next_nk.tag), null]]);
-						
-						switch(el.tag) {
-							case "ArgEdge":
-								// acc.push([el.contents[0], [SPANTY.AG_TO_ARG, el]]);
-								assert(next_nk.tag === 'NKBind');
-								acc.push([el.contents[1], [SPANTY.CTX.ARG, at]]);
-								acc.push([nk_span, [SPANTY.CTX.BIND_FROM_ARG, at]]);
-								for(const fw_edge_ of next_edges) {
-									const [targ, el_] = fw_edge_;
-									switch(el_.tag) {
-										case 'BindEdge':
-											acc.push([el_.contents, [SPANTY.NODE.BIND_CALLSITE, fw_edge_]]);
-											break;
-										case 'RevBindEdge':
-											acc.push([el_.contents, [SPANTY.NODE.BIND_MATCHSITE, fw_edge_]]);
-											break;
-									}
-								}
-								// console.log(next_edges);
-								// console.log(acc);
-								break;
-							case "AppEdge":
-								// acc.push([el.contents[0], [SPANTY.NODE.AG_TO_BIND]])
-								acc.push([el.contents[1], [SPANTY.CTX.BIND_FROM_AG, at]]);
-								acc.push.apply(acc, ag2spans(next_edges));
-								break;
-							case "BindEdge":
-								assert(next_nk.tag === 'NKApp');
-								acc.push([el.contents, [SPANTY.CTX.BIND_FROM_ARG, at]]);
-								acc.push.apply(acc, ag2spans(next_edges));
-								break;
-							case "RevBindEdge":
-								assert(next_nk.tag === 'NKApp');
-								acc.push([el.contents, [SPANTY.CTX.BIND_FROM_ARG, at]]);
-								acc.push.apply(acc, ag2spans(next_edges));
-								break;
+	fw_edge2spks = (fw_edge) => {
+		const spk_join = (l, r) => ({
+			ctxs: l.ctxs.concat(r.ctxs)
+			, nodes: l.nodes.concat(r.nodes)
+		});
+		
+		const [node, el] = fw_edge;
+		const [elsp, elty] = el2spk(el);
+		if(this.state.gr.has(node)) {
+			const [[next_nk, next_cs_id], next_edges] = this.state.gr.get(node);
+			const here = {
+				ctxs: [ // context spks
+					[nk_span(next_nk), [NK2ENV.get(next_nk.tag), null]]
+					, [elsp, [elty, fw_edge]]
+				],
+				nodes: []
+			};
+			const next = (() => { // node spks
+				switch(el.tag) {
+					case "ArgEdge":
+						// acc.push([el.contents[0], [SPANTY.AG_TO_ARG, el]]);
+						console.log(next_nk, next_cs_id, next_edges);
+						assert(next_nk.tag === 'NKBind');
+						const nodes = []
+						for(const fw_edge_ of next_edges) {
+							const [targ, el_] = fw_edge_;
+							switch(el_.tag) {
+								case 'BindEdge':
+									nodes.push([el_.contents, [SPANTY.NODE.BIND_CALLSITE, fw_edge_]]);
+									break;
+								case 'RevBindEdge':
+									nodes.push([el_.contents, [SPANTY.NODE.BIND_MATCHSITE, fw_edge_]]);
+									break;
+							}
 						}
-					}
-					// debugger;
-					return acc;
-				})()}
-				should_scroll_to={this.should_scroll_to}
-				wrap_snip={wrap_snip}
-				onSnipClick={this.snipClickHandler}
-			/>
-		</section>
+						return {
+							ctxs: [[nk_span(next_nk), [SPANTY.CTX.BIND_FROM_ARG, fw_edge]]]
+							, nodes
+						};
+						// console.log(next_edges);
+						// console.log(acc);
+						break;
+					case "BindEdge":
+					case "RevBindEdge":
+						assert(next_nk.tag === 'NKApp');
+					case "AppEdge":
+						// acc.push([el.contents[0], [SPANTY.NODE.AG_TO_BIND]])
+						return ag2spks(next_edges);
+						break;
+				}
+			})();
+			return spk_join(here, next);
+		}
+		else {
+			return { ctxs: [], nodes: [] };
+		}
+	}
+	render = () => <div onKeyUp={this.keyPressHandler} id="main_root">
+		<CodeBlock
+			ctx_renderer={this.render_ctx_bar}
+			src={this.state.src}
+			span_ks={this.state.at_idx < this.state.at_history.size && this.state.gr && (() => {
+				const at = this.state.at_history.get(this.state.at_idx);
+				const { ctxs, nodes } = this.fw_edge2spks(at);
+				console.log(nodes, ctxs);
+				return ctxs.concat(nodes);
+			})()}
+			should_scroll_to={this.should_scroll_to}
+			wrap_snip={wrap_snip}
+			onSnipClick={this.snipClickHandler}
+		/>
 	</div>
 }
