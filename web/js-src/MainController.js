@@ -101,11 +101,11 @@ export default class extends React.Component {
 		// }
 	}
 	ctxClickHandler = (e, scroll_to) => {
-		e.preventPropagation();
+		e.stopPropagation();
 		this.setState({ scroll_to });
 	}
 	historyClickHandler = (e, at_idx) => {
-		e.preventPropagation();
+		e.stopPropagation();
 		this.setState({ at_idx });
 	}
 	componentDidUpdate(pprops, pstate) {
@@ -210,8 +210,6 @@ export default class extends React.Component {
 									}
 								})().map(([name, sp]) => 
 									<CtxSnip
-										onClick={this.historyClickHandler}
-										onSnipClick={this.historyClickHandler}
 										name={name}
 										filename={this.state.filelist[sp[0]]}
 										span={sp}
@@ -235,6 +233,9 @@ export default class extends React.Component {
 									&& (() => {
 										const at_sp = nk_span(this.state.gr.get(at[0])[0][0]);
 										return <CtxSnip
+											onClick={this.historyClickHandler}
+											click_key={i}
+											onSnipClick={this.historyClickHandler}
 											name={at[1][0]}
 											filename={this.state.filelist[at_sp[0]]}
 											span={at_sp}

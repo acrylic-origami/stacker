@@ -18,7 +18,7 @@ export default class extends React.PureComponent {
 	}
 	clickHandler = e => {
 		if(this.props.onClick != null)
-			this.props.onClick(this.props.click_key);
+			this.props.onClick(e, this.props.click_key);
 	}
 	snipHoverHandler = (e, k) => {
 		switch(e.type) {
