@@ -1,23 +1,36 @@
 import React from 'react';
 import { List } from 'immutable'
+import * as L from './Lang'
+import * as U from './Util'
 
-export function mk_span_chars(body_lines, span_ks) {
-	const cum_line_chars = body_lines.reduce((acc, l) => acc.push(acc.last() + l.length + 1), List([0])); // +1 for \n, faster push than concat
+type SpanChar<Tk> = U.DictDbl<L.ISpan, L.SpanKey<Tk>>;
+export function mk_span_chars<Tk>(body_lines: string[], span_ks: Array<L.SpanKey<Tk>>): Array<SpanChar<Tk>> {
+	const cum_line_chars = body_lines.reduce((acc, l) => acc.push((acc.last() as number) + l.length + 1), List<number>([0])); // +1 for \n, faster push than concat
 	// span_ks.sort(([la, ca], [lb, cb]) => la > lb || (la === lb && ca > cb));
 	// const span_ks = this.state.st_at.map(e => this.state.st_gr.jsg_gr.get(e)[1])
 	// 	.filter(l => !!l.length)[0]
 	// 	.map(([_, sp]) => sp)
-	return span_ks.map(
-		([span, k]) => {
+	return span_ks.reduce(
+		(l, [span, k]) => {
 			const [_src, [ll, lc], [rl, rc]] = span;
-			return { key: [cum_line_chars.get(ll - 1) + lc - 1, cum_line_chars.get(rl - 1) + rc - 1], value: [span, k] };
+			const lchar = cum_line_chars.get(ll - 1);
+			const rchar = cum_line_chars.get(rl - 1);
+			if(lchar !== undefined && rchar !== undefined) {
+				const sp: L.ISpan = [+ lc - 1,  + rc - 1];
+				const v : L.SpanKey<Tk> = [span, k];
+				return l.push({
+					key: sp,
+					value: v
+				});
+			}
+			else return l;
 		}
-	); // :: [{ key: ISpan, value: (Span, k))]
+	, List<SpanChar<Tk>>()).toArray(); // :: [{ key: ISpan, value: (Span, k))]
 }
 
-export function slice_parsetree(t, sp) { // , dir=false
+export function slice_parsetree(t: L.KTree, sp: L.ISpan): undefined | L.KTree { // , dir=false
 	// dir = false => subtree, true = supertree
-	function r(t_, n) {
+	function r(t_: L.KTree, n: number): [undefined | L.KTree, number]{
 		if(typeof t_ === 'string') {
 			const next_n = n + t_.length;
 			if(
@@ -33,13 +46,13 @@ export function slice_parsetree(t, sp) { // , dir=false
 					, next_n
 				];
 			}
-			else return [null, next_n];
+			else return [undefined, next_n];
 		}
 		else {
 			const [children, n_] = t_.children.reduce(([acc, n_], t__) => {
 				const [m_subt, n__] = r(t__, n_);
-				return [m_subt !== null ? acc.push(m_subt) : acc, n__];
-			}, [List(), n]);
+				return [m_subt !== undefined ? acc.push(m_subt) : acc, n__];
+			}, [List<L.KTree>(), n]);
 			if(children.size > 0) {
 				return [{
 					kind: t_.kind,
@@ -47,34 +60,35 @@ export function slice_parsetree(t, sp) { // , dir=false
 				}, n_];
 			}
 			else {
-				return [null, n_];
+				return [undefined, n_];
 			}
 		}
 	}
 	return r(t, 0)[0];
 }
 
-export function mk_parsetree(parsetree, src_snips) {
+export function mk_parsetree<T>(parsetree: L.KTree, src_snips: Array<L.ISpanKey<T>>): Array<[React.ReactNode, L.ISpanKey<T>]> {
 	// KTree :: string | { kind: String, children: [KTree] }
 	// type ParseTree = KTree
 	// mk_parsetree :: KTree -> [(ISpan, k)] -> [<Span /> & ISpan]
-	function rt(tree) {
-		function rt_(t, n) {
+	function rt(tree: L.KTree): React.ReactNode {
+		function rt_(t: L.KTree, n: number): [React.ReactNode, number] {
 			// t :: KTree
 			if(typeof t === 'string')
 				return [t, n + t.length];
 			else {
-				const [eles, n_] = t.children.reduce(([acc, n_], t_) => {
+				const z0: [List<React.ReactNode>, number] = [List<React.ReactNode>(), n];
+				const [eles, n_] = t.children.reduce(([acc, n_], t_): [List<React.ReactNode>, number] => { // are you kidding? i think haskell has spoiled me.
 					const [ele, n__] = rt_(t_, n_);
 					return [acc.push(ele), n__];
-				}, [List(), n]);
+				}, z0);
 				return [<span className={t.kind && `hljs-${t.kind}`} key={n}>{eles.toArray()}</span>, n_];
 			}
 		}
 		return rt_(tree, 0)[0];
 	}
 	
-	const r = (hl_t, snip_idx, n) => {
+	const r = (hl_t: L.KTree, snip_idx: number, n: number): [L.KTree[], [number, number]] => {
 		// KTree -> Int -> Int -> ([KTree], Int)
 		if(typeof hl_t === 'string') {
 			const rightdist = src_snips[snip_idx][0][1] - n;
@@ -94,7 +108,7 @@ export function mk_parsetree(parsetree, src_snips) {
 		else {
 			let snip_idx_ = snip_idx;
 			let n_ = n;
-			const root_ctor = () => ({ kind: hl_t.kind, children: [] });
+			const root_ctor = () => ({ kind: hl_t.kind, children: new Array<L.KTree>() });
 			const roots = [root_ctor()];
 			for(const c of hl_t.children) {
 				const next = r(c, snip_idx_, n_);
@@ -111,5 +125,5 @@ export function mk_parsetree(parsetree, src_snips) {
 		}
 	}
 	const [ts, _] = r(parsetree, 0, 0);
-	return ts.map((t, i) => [rt(t), src_snips[i][0], src_snips[i][1]])
+	return ts.map((t, i) => [rt(t), src_snips[i]]) // OK
 }
