@@ -112,7 +112,7 @@ export default class extends React.Component<TProps, TState> {
 			if(next !== undefined)
 				this.setState(({ at_idx, at_history }) => ({
 					at_idx: Math.min(at_idx + 1, at_history.size),
-					at_history: at_history.push(c),
+					at_history: at_history.take(at_idx + 1).push(c),
 					scroll_to: nk_span(next[0][0])
 				}));
 		}
@@ -275,19 +275,20 @@ export default class extends React.Component<TProps, TState> {
 							<ul className="flatlist" id="history">
 								{
 									this.state.src && hljs_result
-									&& this.state.at_history.map((at, i) => {
-											const next = this.state.gr.get(node);
+									&& this.state.at_history.map((at_, i) => {
+											const [node_, el_] = at_;
+											const next = this.state.gr.get(node_);
 											if(next !== undefined) {
 												const at_sp = nk_span(next[0][0]);
 												return <CtxSnip<number, number>
 													onClick={this.historyClickHandler}
 													click_key={i}
 													onSnipClick={this.historyClickHandler}
-													name={el.tag}
+													name={el_.tag}
 													filename={this.state.filelist[parseInt(at_sp[0])]}
 													span={at_sp}
 													preview={this.mk_snip_preview<number>(hljs_result, at_sp, [i])}
-													key={at_sp.toString()}
+													key={i}
 												/>;
 											}
 									}).reverse()
