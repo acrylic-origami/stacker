@@ -84,12 +84,18 @@ export default class extends React.Component<TProps, TState> {
 				// 	if(state_init.sccs.hasOwnPropety(scc))
 				// 		state_init.sccs.get(scc) = new Set(state_init.sccs.get(scc));
 				// }
-				this.setState(({ at_history, at_idx }) => ({
-					at_idx: Math.min(at_idx + 1, at_history.size),
-					at_history: at_history.push(state_init_.at[0]),
-					gr: Map(state_init_.gr),
-					filelist
-				}))
+				this.setState(({ at_history, at_idx }) => {
+					const gr: L.NodeGraph = Map(state_init_.gr);
+					const at0 = state_init_.at[0];
+					const next = gr.get(at0[0]);
+					return {
+						at_idx: Math.min(at_idx + 1, at_history.size),
+						at_history: at_history.push(at0),
+						gr,
+						filelist,
+						scroll_to: next && nk_span(next[0][0])
+					};
+				})
 			});
 	}
 	protected keyPressHandler = (e: React.SyntheticEvent): void => {
@@ -122,8 +128,17 @@ export default class extends React.Component<TProps, TState> {
 		this.setState({ scroll_to });
 	}
 	protected historyClickHandler = (e: React.SyntheticEvent, at_idx: number): void => {
-		this.setState({ at_idx });
-		e.stopPropagation();
+		const at_ = this.state.at_history.get(this.state.at_idx);
+		if(at_ !== undefined) {
+			const next = this.state.gr.get(at_[0]);
+			if(next !== undefined) {
+				this.setState({
+					at_idx,
+					scroll_to: nk_span(next[0][0])
+				});
+				e.stopPropagation();
+			}
+		}
 	}
 	componentDidUpdate(pprops: TProps, pstate: TState): void {
 		const diff = {

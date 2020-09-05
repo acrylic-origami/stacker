@@ -55,6 +55,7 @@ export default class<Tk> extends React.PureComponent<TProps<Tk[]>, TState> {
 	}
 	render = () => <a
 		className={`snip snip-${Math.min(NUM_SNIP_DEPTH_COLORS, this.props.ks.length || 1)} ${this.props.className || ''}`}
+		ref={this.aref}
 		onClick={this.handleTaggedEvent}
 		onMouseEnter={this.handleTaggedEvent}
 		onMouseLeave={this.handleTaggedEvent}

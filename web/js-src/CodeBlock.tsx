@@ -175,11 +175,11 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 		<section id="context_bar">
 			{this.props.ctx_renderer(this.state.hljs_result)}
 		</section>
-		<section ref={this.rootRefChangeHandler} id="src_root_container">
+		<section id="src_root_container">
 			<header>
 				<h1>{this.props.src && this.props.src.path}</h1>
 			</header>
-			<section className="src-container">
+			<section ref={this.rootRefChangeHandler} className="src-container">
 				<pre>
 					<code id="src_root" className="language-haskell hljs">
 						{ this.render_highlight() }
