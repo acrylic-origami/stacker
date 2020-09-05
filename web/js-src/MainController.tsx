@@ -101,7 +101,6 @@ export default class extends React.Component<TProps, TState> {
 	protected keyPressHandler = (e: React.SyntheticEvent): void => {
 	}
 	protected snipClickHandler = (e: React.SyntheticEvent, sp_ks: MainSpanKey[]): void => {
-		e.stopPropagation();
 		// s :: (Span, Map Span (SPANTY, FWEdge)) // first span is the span of the mini region that was clicked
 		
 		// const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding

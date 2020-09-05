@@ -84,24 +84,28 @@ export function el2spk(el: EdgeLabel): [Span, SPANTY] {
 	}[el.tag]];
 }
 
-export function candidate<Tk>(sp_ks: SpanKey<[SPANTY, Tk]>[]): SpanKey<[SPANTY, Tk]> { // Map Span k -> (Span, k)
-	const void_sps = sp_ks.reduce((s, [spa, [ka, _]]) => {
-		// console.log(ka, spa, Map(SPANTY).keyOf(ka));
-		if(SPANTY_CTXS.has(ka) || SPANTY_ENV.has(ka)) {
-			return s.add(spa);
+export function candidate<Tk>(sp_ks: SpanKey<[SPANTY, Tk]>[]): SpanKey<[SPANTY, Tk]> | undefined { // Map Span k -> (Span, k)
+	const void_sps = sp_ks.reduce((s, sp_k_a) => {
+		const [spa, [ka, _]] = sp_k_a;
+		const unclickable = (k: SPANTY) => SPANTY_CTXS.has(k) || SPANTY_ENV.has(k);
+		if(unclickable(ka)) {
+			 console.log(ka);
+			return s.add(sp_k_a);
 		}
 		else {
-			return sp_ks.reduce((s_, [spb, [_kb, _]]) => {
-				if(!spaneq(spa, spb) && span_contains(spa, spb)) {
-					return s_.add(spa); // eliminate all spans that contain other spans
+			return sp_ks.reduce((s_, sp_k_b) => {
+				const [spb, [kb, _]] = sp_k_b;
+				if(!spaneq(spa, spb) && span_contains(spa, spb) && !unclickable(kb)) {
+					console.log(spa, spb);
+					return s_.add(sp_k_b); // eliminate all spans that contain other spans
 				}
 				else {
 					return s_;
 				}
 			}, s);
 		}
-	}, Set<Span>());
-	return sp_ks.filter(([sp, _]) => !any(void_sp => spaneq(void_sp, sp), void_sps.toArray()))[0];
+	}, Set<SpanKey<[SPANTY, Tk]>>());
+	return sp_ks.filter((sp_k) => !any(void_sp_k => void_sp_k === sp_k, void_sps.toArray()))[0];
 }
 export function nk_span(nk: NodeKey): Span {
 	switch(nk.tag) {
@@ -112,8 +116,8 @@ export function nk_span(nk: NodeKey): Span {
 	}
 }
 export function span_contains(spa: Span, spb: Span): boolean {
-	return (spa[0][0] >= spb[0][0] || spa[0][0] === spb[0][0] && spa[0][1] >= spb[0][1]) 
-		&& (spa[1][0] <= spb[1][0] || spa[1][0] === spb[1][0] && spa[1][1] <= spb[1][1]) 
+	return (spa[1][0] < spb[1][0] || spa[1][0] === spb[1][0] && spa[1][1] <= spb[1][1]) 
+		&& (spa[2][0] > spb[2][0] || spa[2][0] === spb[2][0] && spa[2][1] >= spb[2][1]) 
 }
 export function repr_el_span(el: EdgeLabel): Span {
 	switch(el.tag) {

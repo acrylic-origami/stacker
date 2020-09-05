@@ -52,13 +52,15 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 			this.props.onSnipClick(e, k_);
 		}
 	}
+	protected codeClickHandler = (e: React.SyntheticEvent) => e.stopPropagation()
+	
 	render = () => <li className="ctx-snip" onClick={this.clickHandler}>
 		<h3>{this.props.name}</h3>
 		<h4>{this.props.filename}</h4>
 		<h5>{ppr_loc(this.props.span[1])}&nbsp;&mdash;&nbsp;{ppr_loc(this.props.span[2])}</h5>
 		<div className="src-container" ref={e => this.setState({ root_container_el: e || undefined })}>
 			<pre>
-				<code className="language-haskell hljs">
+				<code className="language-haskell hljs" onClick={this.codeClickHandler}>
 					&hellip;{this.props.preview.map(([txt, [sp, k]]) =>
 						k === undefined
 							? <span key={sp.toString()}>{txt}</span>

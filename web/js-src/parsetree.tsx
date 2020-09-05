@@ -16,7 +16,7 @@ export function mk_span_chars<Tk>(body_lines: string[], span_ks: Array<L.SpanKey
 			const lchar = cum_line_chars.get(ll - 1);
 			const rchar = cum_line_chars.get(rl - 1);
 			if(lchar !== undefined && rchar !== undefined) {
-				const sp: L.ISpan = [+ lc - 1,  + rc - 1];
+				const sp: L.ISpan = [lchar + lc - 1, rchar + rc - 1];
 				const v : L.SpanKey<Tk> = [span, k];
 				return l.push({
 					key: sp,
