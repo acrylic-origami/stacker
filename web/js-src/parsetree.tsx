@@ -125,5 +125,5 @@ export function mk_parsetree<T>(parsetree: L.KTree, src_snips: Array<L.ISpanKey<
 		}
 	}
 	const [ts, _] = r(parsetree, 0, 0);
-	return ts.map((t, i) => [rt(t), src_snips[i]]) // OK
+	return ts.map((t, i) => [rt(t), src_snips[i]]) // OK, the tuple crap again
 }

@@ -92,12 +92,10 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 					vals.add(start.value);
 				}
 				// debugger;
-				// console.log(I);
 				// I.pop(); // remove the dummy between the last node and the infinity node
 			});
 			
 			// const I = T.items; // [{ key: (Int, Int), value: [(Span, k)] }]
-			// console.log(span_chars, I.map(({ key }) => key));
 			if(I.length > 0) {
 				// I.sort((l, r) => compare(l.key[0], r.key[0])); // sort intervals in ascending order
 				const S : Array<MaybeKeyedSubSnip<Tk>> = [[[0, I[0].key[0]], undefined]];
@@ -156,13 +154,11 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 		</span>)}</span>;
 	}
 	snipHoverHandler = (e: React.SyntheticEvent, sp_ks: Array<L.SpanKey<Tk>>): void => {
-		// console.log(e, sp_ks);
 		switch(e.type) {
 			case 'mouseenter':
-				const c = candidate(sp_ks);
+				const c = candidate(sp_ks as any); // TODO: OOPS.
 				if(c !== undefined) {
 					const [sp, _k] = c;
-					console.log(c);
 					this.setState({ snip_focuses: sp })
 				}
 				break;

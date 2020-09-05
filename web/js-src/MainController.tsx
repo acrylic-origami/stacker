@@ -14,7 +14,6 @@ type MainSpanKey = L.SpanKey<SpanMeta>
 type SplitSpanKeys = { ctxs: MainSpanKey[], nodes: MainSpanKey[] }
 
 function wrap_snip(txt: React.ReactNode, sp_ks: MainSpanKey[]): React.ReactNode {
-	// console.log(sp_ks);
 	const k_counts = sp_ks.reduce((acc, [sp, [spty, _el]]) => acc.update(spty, 0, i => i + 1), Map<L.SPANTY, number>());
 	return <span className={k_counts.map((cnt, k) => `snip-${k}-${Math.min(NUM_SNIP_DEPTH_COLORS, cnt)}`).join(' ')}>{txt}</span>
 }
@@ -23,7 +22,6 @@ function ag2spks(ag: L.AppGroup): SplitSpanKeys {
 	const ctxs: MainSpanKey[] = [];
 	const nodes: MainSpanKey[] = [];
 	for(const fw_edge of ag) {
-		// console.log(fwedge, ag)
 		const el = fw_edge[1];
 		switch(el.tag) {
 			case 'ArgEdge':
@@ -48,7 +46,7 @@ const split_spk_join = (l: SplitSpanKeys, r: SplitSpanKeys): SplitSpanKeys => ({
 interface TState {
 	gr: L.NodeGraph,
 	at_idx: number,
-	at_history: List<L.FwEdge | undefined>,
+	at_history: List<L.FwEdge>,
 	filelist: string[],
 	src?: L.Src,
 	src_req_idx: number,
@@ -95,7 +93,6 @@ export default class extends React.Component<TProps, TState> {
 			});
 	}
 	protected keyPressHandler = (e: React.SyntheticEvent): void => {
-		console.log(e);
 	}
 	protected snipClickHandler = (e: React.SyntheticEvent, sp_ks: MainSpanKey[]): void => {
 		e.stopPropagation();
@@ -103,11 +100,11 @@ export default class extends React.Component<TProps, TState> {
 		
 		// const sps = sp_ks.map((_k, sp) => sp); // TODO confirm that's the CS id, for my understanding
 		// const which = ; // , which = sp_ks.filter((_k, sp) => spaneq(sp, which_sp)).first()[1];
-		const c = candidate(sp_ks)[1][1];
-		if(c !== undefined) {
+		const mc = candidate(sp_ks);
+		if(mc !== undefined) {
+			const c = mc[1][1];
 			const next = this.state.gr.get(c[0]);
 			if(next !== undefined)
-				// console.log(sp_ks, c);
 				this.setState(({ at_idx, at_history }) => ({
 					at_idx: Math.min(at_idx + 1, at_history.size),
 					at_history: at_history.push(c),
@@ -153,13 +150,14 @@ export default class extends React.Component<TProps, TState> {
 					const stash_req_idx = this.state.src_req_idx;
 					fetch(`/f?n=${encodeURIComponent(at_path.replace('lib/', '').replace('.hs', '.hie'))}`)
 						.then(r => r.text())
-						.then(t => this.setState(st => { // plz ignore this error, setState type is complicated
+						.then(t => this.setState(st => {
 							if(this.state.src_req_idx === stash_req_idx) {
 								return {
 									src_req_idx: stash_req_idx + 1,
 									src: { path: at_path, body: { raw: t, lines: t.split('\n') } }
 								};
 							}
+							else return null;
 						}))
 				}
 			}
@@ -300,7 +298,6 @@ export default class extends React.Component<TProps, TState> {
 								const nodes_ = ((): Array<[string, MainSpanKey]> => {
 									switch(el.tag) {
 										case 'ArgEdge':
-											console.log(nodes, at)
 											return nodes.map((spk): [string, MainSpanKey] => {
 												const [_sp, [_ty, [_n, el_]]] = spk;
 												assert(el_.tag === 'BindEdge' || el_.tag === 'RevBindEdge', `Unexpected ${el_.tag}`)
@@ -332,7 +329,6 @@ export default class extends React.Component<TProps, TState> {
 											break;
 									}
 								})();
-								console.log(nodes_);
 								return nodes_.map(([name, sp_k], i) => {
 									const [sp, [_ty, [n, el]]] = sp_k;
 									return <CtxSnip<MainSpanKey[], L.Span>
@@ -371,7 +367,6 @@ export default class extends React.Component<TProps, TState> {
 					switch(el.tag) {
 						case "ArgEdge":
 							// acc.push([el.contents[0], [SPANTY.AG_TO_ARG, el]]);
-							console.log(next_nk, next_cs_id, next_edges);
 							assert(next_nk.tag === 'NKBind');
 							const nodes = new Array<MainSpanKey>();
 							for(const fw_edge_ of next_edges) {
@@ -389,8 +384,6 @@ export default class extends React.Component<TProps, TState> {
 								ctxs: [[nk_span(next_nk), [SPANTY.BIND_FROM_ARG, fw_edge]]]
 								, nodes
 							};
-							// console.log(next_edges);
-							// console.log(acc);
 							break;
 						case "BindEdge":
 						case "RevBindEdge":
@@ -417,7 +410,6 @@ export default class extends React.Component<TProps, TState> {
 					const at = this.state.at_history.get(this.state.at_idx);
 					if(at !== undefined) {
 						const { ctxs, nodes } = this.fw_edge2spks(at);
-						console.log(nodes, ctxs);
 						return ctxs.concat(nodes);
 					}
 				})()
