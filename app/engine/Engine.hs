@@ -384,7 +384,7 @@ pt_search dflags (PtStore {..}) cs_segs =
                     let new_edges = case nodes M.!? this_nk of
                           Just (n, _cs) -> map (uncurry (n,,)) next_nodes
                           Nothing -> mempty
-                    return $ new_edges <> next_edges <> next_edges'
+                    return $ unique $ new_edges <> next_edges <> next_edges'
                   ) mempty nk_sucs
               )
           Nothing -> return r0
