@@ -89,14 +89,12 @@ export function candidate<Tk>(sp_ks: SpanKey<[SPANTY, Tk]>[]): SpanKey<[SPANTY, 
 		const [spa, [ka, _]] = sp_k_a;
 		const unclickable = (k: SPANTY) => SPANTY_CTXS.has(k) || SPANTY_ENV.has(k);
 		if(unclickable(ka)) {
-			 console.log(ka);
 			return s.add(sp_k_a);
 		}
 		else {
 			return sp_ks.reduce((s_, sp_k_b) => {
 				const [spb, [kb, _]] = sp_k_b;
 				if(!spaneq(spa, spb) && span_contains(spa, spb) && !unclickable(kb)) {
-					console.log(spa, spb);
 					return s_.add(sp_k_b); // eliminate all spans that contain other spans
 				}
 				else {

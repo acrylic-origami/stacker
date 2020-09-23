@@ -3,7 +3,7 @@ import Q from 'q'
 import { Map, Set, List } from 'immutable'
 import { id, map_intersect, assert, any, tuple } from './Util'
 import { candidate, nk_span, repr_el_span, el2spk, span_contains, SPANTY, spaneq } from './Lang'
-import CodeBlock from './CodeBlock'
+import MainContent from './MainContent'
 import * as L from './Lang'
 import { NUM_SNIP_DEPTH_COLORS } from './const'
 import { mk_span_chars, slice_parsetree, mk_parsetree } from './parsetree'
@@ -12,8 +12,9 @@ import CtxSnip, { TPreview } from './CtxSnip'
 type SpanMeta = [ SPANTY, L.FwEdge ]
 type MainSpanKey = L.SpanKey<SpanMeta>
 type SplitSpanKeys = { ctxs: MainSpanKey[], nodes: MainSpanKey[] }
+export type SnipWrapper<Tk> = (txt: React.ReactNode, sp_ks: L.SpanKey<Tk>[]) => React.ReactNode;
 
-function wrap_snip(txt: React.ReactNode, sp_ks: MainSpanKey[]): React.ReactNode {
+const wrap_snip: SnipWrapper<SpanMeta> = (txt, sp_ks) => {
 	const k_counts = sp_ks.reduce((acc, [sp, [spty, _el]]) => acc.update(spty, 0, i => i + 1), Map<L.SPANTY, number>());
 	return <span className={k_counts.map((cnt, k) => `snip-${k}-${Math.min(NUM_SNIP_DEPTH_COLORS, cnt)}`).join(' ')}>{txt}</span>
 }
@@ -418,7 +419,7 @@ export default class extends React.Component<TProps, TState> {
 		}
 	}
 	render = () => <div onKeyUp={this.keyPressHandler} id="main_root">
-		<CodeBlock<SpanMeta>
+		<MainContent<SpanMeta>
 			ctx_renderer={this.render_ctx_bar}
 			src={this.state.src}
 			span_ks={this.state.at_idx < this.state.at_history.size && this.state.gr && (() => {
@@ -430,7 +431,7 @@ export default class extends React.Component<TProps, TState> {
 				})()
 				|| []
 			}
-			should_scroll_to={this.should_scroll_to}
+			scroll_to={this.state.scroll_to}
 			wrap_snip={wrap_snip}
 			onSnipClick={this.snipClickHandler}
 		/>

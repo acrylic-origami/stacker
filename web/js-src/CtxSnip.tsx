@@ -71,7 +71,6 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 									ks={[k[0]]}
 									key={sp.toString()}
 									root={this.state.root_container_el}
-									scroll_idx={0}
 									className={
 										(this.state.snip_hovered
 											? 'focused'

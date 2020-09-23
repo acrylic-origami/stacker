@@ -1,48 +1,23 @@
 import React from 'react'
-import { offsetTo } from './Util'
 import { NUM_SNIP_DEPTH_COLORS } from './const'
 
 type Handler<Tk> = (e: React.SyntheticEvent, k: Tk) => void
 type TProps<Tk> = {
-	scroll_idx: number | boolean,
 	root?: HTMLElement,
 	onClick?: Handler<Tk>,
 	onMouseEnter?: Handler<Tk>,
 	onMouseLeave?: Handler<Tk>,
+	fwd_ref?: React.RefObject<HTMLAnchorElement>,
 	ks: Tk,
+	// hoverWith?: string,
 	className?: string
 }
 type TState = {}
 export default class<Tk> extends React.PureComponent<TProps<Tk[]>, TState> {
-	private aref: React.RefObject<HTMLAnchorElement>;
+	// private aref: React.RefObject<HTMLAnchorElement>;
 	constructor(props: TProps<Tk[]>) {
 		super(props);
-		this.aref = React.createRef();
-	}
-	componentDidMount() {
-		if(+this.props.scroll_idx > 0) {
-			this.scroll_here();
-		}
-	}
-	componentDidUpdate(pprops: TProps<Tk[]>) {
-		if(+this.props.scroll_idx > 0 && (this.props.scroll_idx !== pprops.scroll_idx || pprops.root !== this.props.root)) {
-			this.scroll_here();
-		}
-	}
-	scroll_here = (): void => {
-		const aref = this.aref?.current;
-		if(aref !== null && this.props.root !== undefined) {
-			const offset = offsetTo(aref, this.props.root);
-			if(offset !== undefined) {
-				// offset can be undefined in between renders
-				const box = this.props.root.getBoundingClientRect();
-				this.props.root.scroll({
-					left: offset[0] - box.width / 2,
-					top: offset[1] - box.height / 2,
-					behavior: 'smooth'
-				});
-			}
-		}
+		// this.aref = React.createRef();
 	}
 	handleTaggedEvent = (e: React.SyntheticEvent): void => {
 		const handler = ({
@@ -55,7 +30,7 @@ export default class<Tk> extends React.PureComponent<TProps<Tk[]>, TState> {
 	}
 	render = () => <a
 		className={`snip snip-${Math.min(NUM_SNIP_DEPTH_COLORS, this.props.ks.length || 1)} ${this.props.className || ''}`}
-		ref={this.aref}
+		ref={this.props.fwd_ref}
 		onClick={this.handleTaggedEvent}
 		onMouseEnter={this.handleTaggedEvent}
 		onMouseLeave={this.handleTaggedEvent}
@@ -63,3 +38,7 @@ export default class<Tk> extends React.PureComponent<TProps<Tk[]>, TState> {
 		{this.props.children}
 	</a>
 }
+// screw ref forwarding, I can't make it preserve my generic component without jumping through hoops with exotic component or just coercing it. This is because you can't have consts with generics. The return from `forwardRef` is also so complicated that it's not worth even writing the type and bolting myself to the type definition in @types/react. Typescript sometimes makes me sad.
+
+// const El = React.forwardRef(<Tk extends any>(props, ref) => <El<Tk> {...props} fwd_ref={ref} />);
+// export default El;
