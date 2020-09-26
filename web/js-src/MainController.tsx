@@ -2,8 +2,6 @@ import React from 'react'
 import Q from 'q'
 import { Map, Set, List } from 'immutable'
 import { id, map_intersect, assert, any, tuple, jsoneq } from './Util'
-import * as U from './Util'
-import { MinHeap } from 'mnemonist'
 import { candidate, nk_span, repr_el_span, el2spk, span_contains, SPANTY, spaneq } from './Lang'
 import MainContent from './MainContent'
 import * as L from './Lang'
@@ -11,10 +9,6 @@ import { NUM_SNIP_DEPTH_COLORS } from './const'
 import { mk_span_chars, slice_parsetree, mk_parsetree } from './parsetree'
 import CtxSnip, { TPreview } from './CtxSnip'
 import keycode from './keycode'
-import hljs from 'highlight.js/lib/core'
-import hs from 'highlight.js/lib/languages/haskell'
-
-hljs.registerLanguage('haskell', hs);
 
 type SpanMeta = [ SPANTY, L.FwEdge ]
 // !!!!!!!!!!!!!!
@@ -22,9 +16,6 @@ type SpanMeta = [ SPANTY, L.FwEdge ]
 type MainSpanKey = L.SpanKey<SpanMeta>
 type SplitSpanKeys = { ctxs: MainSpanKey[], nodes: MainSpanKey[] }
 export type SnipWrapper<Tk> = (txt: React.ReactNode, sp_ks: L.SpanKey<Tk>[]) => React.ReactNode;
-export type MaybeKeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>> | undefined> // outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the snippet location
-export type TParseTree<Tk> = Array<[React.ReactNode, MaybeKeyedSubSnip<Tk>]>
-type MainParseTree = TParseTree<SpanMeta>
 
 const wrap_snip: SnipWrapper<SpanMeta> = (txt, sp_ks) => {
 	const k_counts = sp_ks.reduce((acc, [sp, [spty, _el]]) => acc.update(spty, 0, i => i + 1), Map<L.SPANTY, number>());
@@ -128,9 +119,6 @@ interface TState {
 	scroll_to?: L.Span,
 	soft_selected?: MainSpanKey, // the instance in the next nodes list that is soft-selected; note, this is distinct from the highlight on hover of a component within the code block
 	snip_active?: MainSpanKey
-	
-	parsetree?: MainParseTree,
-	hljs_result: any,
 };
 
 type TProps = {}
@@ -151,9 +139,6 @@ export default class extends React.Component<TProps, TState> {
 		scroll_to: undefined,
 		soft_selected: undefined,
 		snip_active: undefined,
-		
-		parsetree: undefined,
-		hljs_result: undefined,
 	}
 	protected main_root_ref: React.RefObject<HTMLDivElement>
 	constructor(props: TProps) {
@@ -208,19 +193,8 @@ export default class extends React.Component<TProps, TState> {
 					this.state.src !== undefined
 					&& pstate.src !== undefined
 					&& pstate.src.path !== this.state.src.path
-				),
-			
-			hljs_result: pstate.hljs_result !== this.state.hljs_result,
+				)
 		};
-		
-		if(diff.src && this.state.src !== undefined) {
-			this.setState({ hljs_result: hljs.highlight('haskell', this.state.src.body.raw) });
-		}
-		if(diff.hljs_result || diff.at_spks) {
-			// console.log(diff);
-			this.update_parsetree();
-		}
-		
 		if(diff.at_idx) {
 			this.setState(({ at_idx }) => {
 				const at = this.state.at_history.get(this.state.at_idx);
@@ -480,71 +454,6 @@ export default class extends React.Component<TProps, TState> {
 	}
 	
 	
-	protected get_src_snips(): undefined | Array<MaybeKeyedSubSnip<SpanMeta>> {
-		if(this.state.src !== undefined && this.state.at_spks !== undefined) {
-			// if(this.state.at_spks.length > 100) return [];
-			const at_spks_merged = this.state.at_spks.ctxs.concat(this.state.at_spks.nodes);
-			const span_chars = mk_span_chars(this.state.src.body.lines, at_spks_merged);
-			
-			const I = Array<U.DictDbl<L.ISpan, Array<MainSpanKey>>>(); // list of disjoint merged intervals
-			Set<MainSpanKey>().withMutations(vals => {
-				const ends = new MinHeap<U.DictDbl<L.ISpan, MainSpanKey>>((a, b) => U.compare(a.key[1], b.key[1]));
-				const starts = span_chars.sort((a, b) => U.compare(a.key[0], b.key[0]));
-				starts.push({ key: [Infinity, Infinity], value: undefined as any }); // infinity node to help tie all the ends at the... end
-				
-				let last_il = undefined;
-				for(const start of starts) {
-					while(ends.size > 0 && (ends.peek()?.key[1] || Infinity) <= start.key[0]) {
-						const end = ends.pop();
-						if(end !== undefined) {
-							if(last_il !== undefined && last_il !== end.key[1])
-								I.push({ key: [last_il, end.key[1]], value: vals.toArray() });
-							
-							vals.delete(end.value);
-							last_il = end.key[1];
-						}
-					}
-					if(last_il !== undefined && last_il !== start.key[0] && vals.size > 0) {
-						I.push({ key: [last_il, start.key[0]], value: vals.toArray() });
-					}
-					last_il = start.key[0];
-					ends.push(start);
-					vals.add(start.value);
-				}
-				// debugger;
-				// I.pop(); // remove the dummy between the last node and the infinity node
-			});
-			
-			// const I = T.items; // [{ key: (Int, Int), value: [(Span, k)] }]
-			if(I.length > 0) {
-				// I.sort((l, r) => compare(l.key[0], r.key[0])); // sort intervals in ascending order
-				const S : Array<MaybeKeyedSubSnip<SpanMeta>> = [[[0, I[0].key[0]], undefined]];
-				for(let i = 0; i < I.length; i++) {
-					S.push(
-						[[I[i].key[0], I[i].key[1]], I[i].value],
-					);
-					if(i >= I.length - 1 || I[i].key[1] !== I[i + 1].key[0]) // filter zero-length span_ks
-						S.push([
-							[I[i].key[1], i >= I.length - 1 ? Infinity : I[i + 1].key[0]]
-							, undefined
-						])
-				}
-				return S;
-			}
-			else {
-				return [];
-			}
-		}
-		else return undefined;
-	}
-	update_parsetree(): void {
-		const src_snips = this.get_src_snips();
-		if(src_snips !== undefined && this.state.hljs_result !== undefined) {
-			const parsetree = mk_parsetree(this.state.hljs_result.emitter.root, src_snips);
-			this.setState({ parsetree });
-		}
-	}
-	
 	////////////////////////////////////////////////////////////////////////
 	
 	//////////////////////////
@@ -665,18 +574,14 @@ export default class extends React.Component<TProps, TState> {
 		onClick={this.cancel_mode}
 		id="main_root"
 		ref={this.main_root_ref}>
-		<section id="main_content">
-			<section id="context_bar">
-				{this.render_ctx_bar(this.state.hljs_result)}
-			</section>
-			<MainContent<SpanMeta>
-				src={this.state.src}
-				parsetree={this.state.parsetree}
-				onSnipHover={this.snipHoverHandler}
-				scroll_to={this.state.scroll_to}
-				wrap_snip={wrap_snip}
-				onSnipClick={this.snipClickHandler}
-			/>
-		</section>
+		<MainContent<SpanMeta>
+			ctx_renderer={this.render_ctx_bar}
+			src={this.state.src}
+			span_ks={this.state.at_spks_merged || []}
+			onSnipHover={this.snipHoverHandler}
+			scroll_to={this.state.scroll_to}
+			wrap_snip={wrap_snip}
+			onSnipClick={this.snipClickHandler}
+		/>
 	</div>
 }

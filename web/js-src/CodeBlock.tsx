@@ -1,7 +1,6 @@
 import React from 'react'
 import { SnipWrapper } from './MainController'
-import { PassthruProps, SnipClickHandler, SnipHoverHandler } from './MainContent'
-import { MaybeKeyedSubSnip, TParseTree } from './MainController'
+import { PassthruProps, SnipClickHandler, SnipHoverHandler, MaybeKeyedSubSnip, TParseTree } from './MainContent'
 import { List } from 'immutable'
 import * as L from './Lang'
 import Snip from './Snip'
