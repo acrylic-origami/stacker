@@ -30,7 +30,7 @@ export default class<Tk> extends React.PureComponent<TProps<Tk>, {}> {
 								fwd_ref={this.props.snip_refs && this.props.snip_refs[i]}
 								onMouseEnter={this.props.onSnipHover}
 								onMouseLeave={this.props.onSnipHover}
-								force_focus={console.log(JSON.stringify(sp_ks), JSON.stringify(this.props.soft_selected)) || any(spk => jsoneq(this.props.soft_selected, spk), sp_ks)}
+								force_focus={any(spk => jsoneq(this.props.soft_selected, spk), sp_ks)}
 								ks={sp_ks}
 								key={sp.toString()}
 								// root={this.props.root_container_el}

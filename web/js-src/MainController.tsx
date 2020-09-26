@@ -199,11 +199,14 @@ export default class extends React.Component<TProps, TState> {
 		if(diff.at_idx) {
 			this.setState(({ at_idx }) => {
 				const at = this.state.at_history.get(this.state.at_idx);
-				if(at !== undefined) 
+				if(at !== undefined) {
+					const next = this.state.gr.get(at[0]);
 					return {
+						scroll_to: next && nk_span(next[0][0]),
 						at_spks: fw_edge2spks(at, this.state.gr),
 						at_spks_idx: at_idx
 					};
+				}
 				else return null;
 			});
 		}
@@ -449,7 +452,6 @@ export default class extends React.Component<TProps, TState> {
 			this.setState(({ at_idx, at_history }) => ({
 				at_idx: Math.min(at_idx + 1, at_history.size),
 				at_history: at_history.take(at_idx + 1).push(c),
-				scroll_to: nk_span(next[0][0]),
 				soft_selected: undefined
 			}));
 	}
@@ -527,25 +529,12 @@ export default class extends React.Component<TProps, TState> {
 		}
 	}
 	protected keyPressHandler = (e: KeyboardEvent): void => {
+		console.log(e.key);
 		switch(e.key) {
 			case 'Escape':
 				// for now not overloaded: just cancel the selected mode
 				this.cancel_mode();
 				break;
-			// can't use n/N to tab because we can't emit a tab press for focus. Bummer. https://stackoverflow.com/a/40471328/3925507
-			// case 'n':
-			// case 'N':
-			// 	const { location, ctrlKey, shiftKey, altKey, metaKey, repeat, isComposing } = e;
-			// 	const tab_event = new KeyboardEvent(e.type, {
-			// 		key: 'Tab', // see https://www.w3.org/TR/uievents-key/#named-key-attribute-values
-			// 		code: 'Tab', // see https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/code/code_values
-			// 		// keyCode: 9,
-			// 		// charCode: 9,
-			// 		location, ctrlKey, shiftKey, altKey, metaKey, repeat, isComposing 
-			// 	});
-			// 	console.log(tab_event);
-			// 	window.dispatchEvent(tab_event);
-			// 	break;
 			case '1':
 			case '2':
 			case '3':
@@ -573,10 +562,13 @@ export default class extends React.Component<TProps, TState> {
 					e.preventDefault();
 				}
 				break;
+			case 'Backspace':
+			case 'u':
 			case 'U':
-				this.setState(({ at_idx, at_history }) => ({ at_idx: Math.max(0, at_idx) }));
+				this.setState(({ at_idx, at_history }) => ({ at_idx: Math.max(0, at_idx - 1) }));
 				break;
 			case 'R':
+			case 'r':
 				if(e.ctrlKey) {
 					this.setState(({ at_idx, at_history }) => ({ at_idx: Math.min(at_history.size - 1, at_idx + 1) }));
 				}
