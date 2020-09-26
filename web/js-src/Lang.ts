@@ -18,13 +18,15 @@ export type EdgeLabelTag = 'ArgEdge' | 'AppEdge' | 'BindEdge' | 'RevBindEdge';
 export type EdgeLabelContents =
 	[Span, Span] // ArgEdge, AppEdge
 	| Span // BindEdge, RevBindEdge
+
+// !!!!!!!!!!!!
+// NOTE!!! EdgeLabel and FwEdge must remain serializable and unique. These are part of the main keys (MainSpanKey = SpanKey<SpanMeta>) that are used to identify things, and use JSON equality for flexibility. Later we'll dedicate a MainSpanKey equality or use something hashable for use in a map, but for now obey these properties.
 export type EdgeLabel =
 	{ tag: 'ArgEdge' | 'AppEdge', contents: [Span, Span] }
 	| { tag: 'BindEdge' | 'RevBindEdge', contents: Span }
 export type FwEdge = [Node, EdgeLabel]
 
-export type BindKeyTag = 'BindNamed' | 
-'BindLam'
+export type BindKeyTag = 'BindNamed' | 'BindLam'
 export type BindKey = { tag: BindKeyTag, contents: Span }
 
 export type NodeKeyTag = 'NKApp' | 'NKBind';
@@ -116,6 +118,10 @@ export function nk_span(nk: NodeKey): Span {
 export function span_contains(spa: Span, spb: Span): boolean {
 	return (spa[1][0] < spb[1][0] || spa[1][0] === spb[1][0] && spa[1][1] <= spb[1][1]) 
 		&& (spa[2][0] > spb[2][0] || spa[2][0] === spb[2][0] && spa[2][1] >= spb[2][1]) 
+}
+export function span_intersects(spa: Span, spb: Span): boolean {
+	return (spa[1][0] < spb[2][0] || spa[1][0] === spb[2][0] && spa[1][1] <= spb[2][1]) 
+		&& (spa[2][0] > spb[1][0] || spa[2][0] === spb[1][0] && spa[2][1] >= spb[1][1]) 
 }
 export function repr_el_span(el: EdgeLabel): Span {
 	switch(el.tag) {

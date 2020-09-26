@@ -35,6 +35,9 @@ ul.flatlist, ol.flatlist {
 .ctx-snip .hljs {
 	overflow:hidden;
 }
+.ctx-snip.active {
+	background-color:#F00;
+}
 
 #main_root {
 	display:flex;

@@ -5,16 +5,21 @@ type Handler<Tk> = (e: React.SyntheticEvent, k: Tk) => void
 type TProps<Tk> = {
 	root?: HTMLElement,
 	onClick?: Handler<Tk>,
+	onDoubleClick?: Handler<Tk>,
 	onMouseEnter?: Handler<Tk>,
 	onMouseLeave?: Handler<Tk>,
 	fwd_ref?: React.RefObject<HTMLAnchorElement>,
 	ks: Tk,
+	force_focus: boolean,
 	// hoverWith?: string,
 	className?: string
 }
 type TState = {}
 export default class<Tk> extends React.PureComponent<TProps<Tk[]>, TState> {
 	// private aref: React.RefObject<HTMLAnchorElement>;
+	public static defaultProps = {
+		force_focus: false
+	}
 	constructor(props: TProps<Tk[]>) {
 		super(props);
 		// this.aref = React.createRef();
@@ -29,9 +34,10 @@ export default class<Tk> extends React.PureComponent<TProps<Tk[]>, TState> {
 			handler(e, this.props.ks) // need to shuttle ks around so this function isn't regenerated on every re-render of the parent; I wish it wasn't this aware
 	}
 	render = () => <a
-		className={`snip snip-${Math.min(NUM_SNIP_DEPTH_COLORS, this.props.ks.length || 1)} ${this.props.className || ''}`}
+		className={`snip snip-${Math.min(NUM_SNIP_DEPTH_COLORS, this.props.ks.length || 1)} ${this.props.className || ''} ${this.props.force_focus ? 'focused' : ''}`}
 		ref={this.props.fwd_ref}
 		onClick={this.handleTaggedEvent}
+		onDoubleClick={this.handleTaggedEvent}
 		onMouseEnter={this.handleTaggedEvent}
 		onMouseLeave={this.handleTaggedEvent}
 	>

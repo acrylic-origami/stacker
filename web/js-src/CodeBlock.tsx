@@ -1,6 +1,7 @@
 import React from 'react'
 import { SnipWrapper } from './MainController'
-import { PassthruProps, SnipClickHandler, SnipHoverHandler, MaybeKeyedSubSnip, TParseTree } from './MainContent'
+import { PassthruProps, SnipClickHandler, SnipHoverHandler } from './MainContent'
+import { MaybeKeyedSubSnip, TParseTree } from './MainController'
 import { List } from 'immutable'
 import * as L from './Lang'
 import Snip from './Snip'
@@ -8,7 +9,7 @@ import Snip from './Snip'
 interface TProps<Tk> extends PassthruProps<Tk> {
 	parsetree?: TParseTree<Tk>,
 	snip_refs?: Array<React.RefObject<HTMLAnchorElement>>,
-	snipHoverHandler: SnipHoverHandler<Tk>,
+	onSnipHover: SnipHoverHandler<Tk>,
 	// root_container_el?: HTMLElement,
 	wrap_snip: SnipWrapper<Tk>,
 };
@@ -26,8 +27,8 @@ export default class<Tk> extends React.PureComponent<TProps<Tk>, {}> {
 							: <Snip<L.SpanKey<Tk>>
 								onClick={this.props.onSnipClick}
 								fwd_ref={this.props.snip_refs && this.props.snip_refs[i]}
-								onMouseEnter={this.props.snipHoverHandler}
-								onMouseLeave={this.props.snipHoverHandler}
+								onMouseEnter={this.props.onSnipHover}
+								onMouseLeave={this.props.onSnipHover}
 								ks={sp_ks}
 								key={sp.toString()}
 								// root={this.props.root_container_el}

@@ -88,42 +88,46 @@ export function mk_parsetree<T>(parsetree: L.KTree, src_snips: Array<L.ISpanKey<
 		return rt_(tree, 0)[0];
 	}
 	
-	const r = (hl_t: L.KTree, snip_idx: number, n: number): [L.KTree[], [number, number]] => {
-		// KTree -> Int -> Int -> ([KTree], Int)
-		if(typeof hl_t === 'string') {
-			const rightdist = src_snips[snip_idx][0][1] - n;
-			if(rightdist <= hl_t.length) {  // TODO check openness of span boundaries
-				// console.log(snip_idx, rightdist, src_snips[snip_idx]);
-				// need to cut this tag in half
-				const next = r(hl_t.slice(rightdist), snip_idx + 1, src_snips[snip_idx][0][1]);
-				// const partial_t_ = push_leaf(, partial_t);
-				const here = hl_t.slice(0, rightdist); // mksnip(rt(partial_t_));
-				next[0].unshift(here); // push new tag to start
-				return next;
-			}
-			else {
-				return [[hl_t], [snip_idx, n + hl_t.length]];
-			}
-		}
-		else {
-			let snip_idx_ = snip_idx;
-			let n_ = n;
-			const root_ctor = () => ({ kind: hl_t.kind, children: new Array<L.KTree>() });
-			const roots = [root_ctor()];
-			for(const c of hl_t.children) {
-				const next = r(c, snip_idx_, n_);
-				const next_trees = next[0];
-				[snip_idx_, n_] = next[1];
-				for(let t = 0; t < next_trees.length; t++) {
-					if(t > 0)
-						roots.push(root_ctor());
-					
-					roots[roots.length - 1].children.push(next_trees[t]);
+	if(src_snips.length === 0)
+		return [];
+	else {
+		const r = (hl_t: L.KTree, snip_idx: number, n: number): [L.KTree[], [number, number]] => {
+			// KTree -> Int -> Int -> ([KTree], Int)
+			if(typeof hl_t === 'string') {
+				const rightdist = src_snips[snip_idx][0][1] - n;
+				if(rightdist <= hl_t.length) {  // TODO check openness of span boundaries
+					// console.log(snip_idx, rightdist, src_snips[snip_idx]);
+					// need to cut this tag in half
+					const next = r(hl_t.slice(rightdist), snip_idx + 1, src_snips[snip_idx][0][1]);
+					// const partial_t_ = push_leaf(, partial_t);
+					const here = hl_t.slice(0, rightdist); // mksnip(rt(partial_t_));
+					next[0].unshift(here); // push new tag to start
+					return next;
+				}
+				else {
+					return [[hl_t], [snip_idx, n + hl_t.length]];
 				}
 			}
-			return [roots, [snip_idx_, n_]];
+			else {
+				let snip_idx_ = snip_idx;
+				let n_ = n;
+				const root_ctor = () => ({ kind: hl_t.kind, children: new Array<L.KTree>() });
+				const roots = [root_ctor()];
+				for(const c of hl_t.children) {
+					const next = r(c, snip_idx_, n_);
+					const next_trees = next[0];
+					[snip_idx_, n_] = next[1];
+					for(let t = 0; t < next_trees.length; t++) {
+						if(t > 0)
+							roots.push(root_ctor());
+						
+						roots[roots.length - 1].children.push(next_trees[t]);
+					}
+				}
+				return [roots, [snip_idx_, n_]];
+			}
 		}
+		const [ts, _] = r(parsetree, 0, 0);
+		return ts.map((t, i) => [rt(t), src_snips[i]]) // OK, the tuple crap again
 	}
-	const [ts, _] = r(parsetree, 0, 0);
-	return ts.map((t, i) => [rt(t), src_snips[i]]) // OK, the tuple crap again
 }

@@ -36,6 +36,9 @@ export function list1eq<T>(a: T[], b: T[]): boolean {
 	}
 	return true;
 }
+export function jsoneq<T>(a: T, b: T): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
+}
 export function id<T>(x: T) { return x; }
 export function map_intersect<Tk, Tv>(M: Map<Tk, Tv>, K: Tk[]): Map<Tk, Tv> { //  | Set<Tk> | List<Tk> // is there an Enumerable/Iterable/Traversable type in TS?
 	return K.reduce((m, k) => {
