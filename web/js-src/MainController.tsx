@@ -160,6 +160,7 @@ export default class extends React.Component<TProps, TState> {
 	///////////////////////////
 	
 	componentDidMount(): void {
+		window.addEventListener('keyup', this.keyPressHandler);
 		fetch('/static/gr.json')
 			.then(a => a.json())
 			.then(([state_init_, filelist]) => {
@@ -511,7 +512,6 @@ export default class extends React.Component<TProps, TState> {
 	}
 	protected snipHoverHandler = (e: React.SyntheticEvent, sp_ks: MainSpanKey[]): void => {
 		const c = candidate(sp_ks);
-		console.log(e.type);
 		switch(e.type) {
 			case 'mouseenter':
 				if(c !== undefined)
@@ -526,30 +526,51 @@ export default class extends React.Component<TProps, TState> {
 				break;
 		}
 	}
-	protected keyPressHandler = (e: React.KeyboardEvent): void => {
+	protected keyPressHandler = (e: KeyboardEvent): void => {
 		switch(e.key) {
 			case 'Escape':
 				// for now not overloaded: just cancel the selected mode
 				this.cancel_mode();
 				break;
-			case 'N':
-				const tab_event = new KeyboardEvent(e.type, e.nativeEvent);
-				if(this.main_root_ref.current !== null)
-					this.main_root_ref.current.dispatchEvent(tab_event);
-				// this is theoretically possible to just let the browser handle, 
-				// if(this.state.soft_selected !== undefined) {
-				// 	const idx0 = this.state.at_spks.nodes.map(s => JSON.stringify(s)).indexOf(JSON.stringify(this.state.soft_selected));
-				// 	const idx = Math.min(
-				// 		this.state.at_spks.nodes.length - 1,
-				// 		Math.max(0, e.shiftKey ? idx0 + 1 : idx0 - 1)
-				// 	);
-				// 	this.setState({ soft_selected: this.state.at_spks.nodes[idx] });
-				// }
+			// can't use n/N to tab because we can't emit a tab press for focus. Bummer. https://stackoverflow.com/a/40471328/3925507
+			// case 'n':
+			// case 'N':
+			// 	const { location, ctrlKey, shiftKey, altKey, metaKey, repeat, isComposing } = e;
+			// 	const tab_event = new KeyboardEvent(e.type, {
+			// 		key: 'Tab', // see https://www.w3.org/TR/uievents-key/#named-key-attribute-values
+			// 		code: 'Tab', // see https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/code/code_values
+			// 		// keyCode: 9,
+			// 		// charCode: 9,
+			// 		location, ctrlKey, shiftKey, altKey, metaKey, repeat, isComposing 
+			// 	});
+			// 	console.log(tab_event);
+			// 	window.dispatchEvent(tab_event);
+			// 	break;
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+				this.setState(({ at_spks }) => ({
+					soft_selected: at_spks.nodes[
+						Math.min(
+							at_spks.nodes.length - 1,
+							parseInt(e.key) - 1
+						)
+					]
+				}));
 				break;
-			case 'Tab':
-				if(e.ctrlKey) {
-					
-					// go between files with ctrl
+			case 'PageUp':
+			case 'PageDown':
+				if(e.altKey) {
+					// go between files
+					const dir = e.key === 'PageUp' ? -1 : 1;
+					// TODO
+					e.preventDefault();
 				}
 				break;
 			case 'U':
@@ -570,7 +591,6 @@ export default class extends React.Component<TProps, TState> {
 	//////////////////////////
 	
 	render = () => <div
-		onKeyUp={this.keyPressHandler}
 		onClick={this.cancel_mode}
 		id="main_root"
 		ref={this.main_root_ref}>
@@ -580,6 +600,7 @@ export default class extends React.Component<TProps, TState> {
 			span_ks={this.state.at_spks_merged || []}
 			onSnipHover={this.snipHoverHandler}
 			scroll_to={this.state.scroll_to}
+			soft_selected={this.state.soft_selected}
 			wrap_snip={wrap_snip}
 			onSnipClick={this.snipClickHandler}
 		/>

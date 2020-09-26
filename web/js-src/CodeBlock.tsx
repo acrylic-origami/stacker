@@ -2,6 +2,7 @@ import React from 'react'
 import { SnipWrapper } from './MainController'
 import { PassthruProps, SnipClickHandler, SnipHoverHandler, MaybeKeyedSubSnip, TParseTree } from './MainContent'
 import { List } from 'immutable'
+import { jsoneq, any } from './Util'
 import * as L from './Lang'
 import Snip from './Snip'
 
@@ -9,6 +10,7 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 	parsetree?: TParseTree<Tk>,
 	snip_refs?: Array<React.RefObject<HTMLAnchorElement>>,
 	onSnipHover: SnipHoverHandler<Tk>,
+	soft_selected?: L.SpanKey<Tk>,
 	// root_container_el?: HTMLElement,
 	wrap_snip: SnipWrapper<Tk>,
 };
@@ -28,6 +30,7 @@ export default class<Tk> extends React.PureComponent<TProps<Tk>, {}> {
 								fwd_ref={this.props.snip_refs && this.props.snip_refs[i]}
 								onMouseEnter={this.props.onSnipHover}
 								onMouseLeave={this.props.onSnipHover}
+								force_focus={console.log(JSON.stringify(sp_ks), JSON.stringify(this.props.soft_selected)) || any(spk => jsoneq(this.props.soft_selected, spk), sp_ks)}
 								ks={sp_ks}
 								key={sp.toString()}
 								// root={this.props.root_container_el}

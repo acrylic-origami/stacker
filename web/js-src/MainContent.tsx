@@ -29,6 +29,7 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 	span_ks: Array<L.SpanKey<Tk>>,
 	// should_scroll_to: (ks: Array<L.SpanKey<Tk>>) => boolean,
 	wrap_snip: (t: React.ReactNode, ks: Array<L.SpanKey<Tk>>) => React.ReactNode,
+	soft_selected?: L.SpanKey<Tk>,
 	onSnipHover: SnipHoverHandler<Tk>,
 	ctx_renderer: (hljs_result: any) => React.ReactNode,
 	scroll_to?: L.Span
@@ -210,6 +211,7 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 				<pre>
 					<code id="src_root" className="language-haskell hljs">
 						<CodeBlock<Tk>
+							soft_selected={this.props.soft_selected}
 							snip_refs={this.state.snip_refs}
 							parsetree={this.state.parsetree}
 							onSnipHover={this.props.onSnipHover}

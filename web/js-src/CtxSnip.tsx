@@ -25,7 +25,7 @@ interface TProps<Tk, Tu> {
 	filename: string,
 	tabbable: boolean,
 }
-const DEBOUNCE_FOCUS_CLICK = 500; // half a second between focus and click events minimum, to avoid click => focus
+const DEBOUNCE_FOCUS_CLICK = 150;
 interface TState {
 	root_container_el?: HTMLElement,
 	snip_hovered: boolean,
@@ -50,6 +50,16 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 			// event_queue: List()
 		};
 		this.aref = React.createRef();
+	}
+	public componentDidUpdate(pprops: TProps<Tk, Tu>, pstate: TState) {
+		const diff = {
+			active: pprops.active !== this.props.active
+		}
+		if(diff.active) {
+			if(this.props.active === true && this.aref.current !== null) {
+				this.aref.current.focus();
+			}
+		}
 	}
 	// public componentDidUpdate(pprops: TProps<Tk, Tu>, pstate: TState) {
 	// 	if(this.props.active)
@@ -79,6 +89,7 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 		e.stopPropagation();
 		const e_ = e.nativeEvent;
 		if(this.props.onClick !== undefined && this.props.click_key !== undefined && e.timeStamp > this.state.last_focus + DEBOUNCE_FOCUS_CLICK) {
+			console.log('??');
 			this.props.onClick(e_, this.props.click_key);
 		}
 		this.setState({ last_click: e.timeStamp });
@@ -156,6 +167,7 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 			className={`ctx-snip ${this.props.active ? 'active' : ''}`}>
 			{ this.props.tabbable
 				? <a href="#"
+						ref={this.aref}
 						onClick={this.clickHandler}
 						onDoubleClick={this.doubleClickHandler}
 						onFocus={this.focusHandler}
