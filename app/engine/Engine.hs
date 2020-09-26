@@ -384,7 +384,7 @@ pt_search dflags (PtStore {..}) cs_segs =
                     let new_edges = case nodes M.!? this_nk of
                           Just (n, _cs) -> map (uncurry (n,,)) next_nodes
                           Nothing -> mempty
-                    return $ new_edges <> next_edges <> next_edges'
+                    return $ unique $ new_edges <> next_edges <> next_edges'
                   ) mempty nk_sucs
               )
           Nothing -> return r0
@@ -472,9 +472,8 @@ main = do
                 , ident <- _s_payload idents
               ])
           grs = [
-              pt_search dflags pt targ_segs bk
+              pt_search dflags (mconcat pts) targ_segs bk
               | bk <- bks
-              , pt <- pts
             ]
           hollow_state = mconcat $ map (uncurry HollowGrState . second gr2adjlist) grs
           ((filelist, filemap), unfile_gr_state) =

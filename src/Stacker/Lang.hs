@@ -195,6 +195,7 @@ data EdgeLabel =
   | AppEdge LIdentifier LIdentifier -- loc of source, loc of target binding
   | BindEdge Span -- just the bindee location itself (bindee -> dependent callsite app groups)
   | RevBindEdge Span -- just the bindee location itself (bindee -> dependent rhs app groups)
+  deriving (Eq, Ord)
   -- the name location that links the nodes together (e.g. a symbol within an AppGroup + its binding, the arg )
   
 instance Outputable EdgeLabel where
