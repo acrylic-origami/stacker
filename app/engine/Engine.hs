@@ -472,9 +472,8 @@ main = do
                 , ident <- _s_payload idents
               ])
           grs = [
-              pt_search dflags pt targ_segs bk
+              pt_search dflags (mconcat pts) targ_segs bk
               | bk <- bks
-              , pt <- pts
             ]
           hollow_state = mconcat $ map (uncurry HollowGrState . second gr2adjlist) grs
           ((filelist, filemap), unfile_gr_state) =
