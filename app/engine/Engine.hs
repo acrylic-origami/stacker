@@ -333,16 +333,16 @@ pt_search dflags (PtStore {..}) cs_segs =
                 BindNamed fn_ident -> (
                     concat $ catMaybes $
                       [
-                        map (\(_sp, ag) ->
+                        map (\(sp, ag) ->
                             (
-                              (NKApp ag, BindEdge (fn_ident ^. s_span))
+                              (NKApp ag, BindEdge (ag ^. s_span)) -- fn_ident ^. s_span -- instead of providing the location of the binding (originally this was the only place I had it), instead just use the NKBind span from the node that this is coming from to identify the binding location
                               , step_to_ag ag
                             )
                           )
                           <$> (_ps_binds ^. bg_bnd_app_map) M.!? (fn_ident ^. s_payload)
                         , map (\(sp, ag) ->
                             (
-                              (NKApp ag, RevBindEdge sp)
+                              (NKApp ag, RevBindEdge (ag ^. s_span))
                               , step_to_ag ag
                             )
                           )
