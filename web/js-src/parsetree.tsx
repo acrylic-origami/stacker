@@ -3,6 +3,10 @@ import { List } from 'immutable'
 import * as L from './Lang'
 import * as U from './Util'
 
+export type MaybeKeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>> | undefined>
+export type TParseTree<Tk> = Array<[React.ReactNode, L.ISpanKey<Tk>]>
+export type ParseTree<Tk> = TParseTree<Array<L.SpanKey<Tk>> | undefined> // the most common ParseTree, with outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the overlapping snippet location
+
 type SpanChar<Tk> = U.DictDbl<L.ISpan, L.SpanKey<Tk>>;
 export function mk_span_chars<Tk>(body_lines: string[], span_ks: Array<L.SpanKey<Tk>>): Array<SpanChar<Tk>> {
 	const cum_line_chars = body_lines.reduce((acc, l) => acc.push((acc.last() as number) + l.length + 1), List<number>([0])); // +1 for \n, faster push than concat
@@ -66,8 +70,7 @@ export function slice_parsetree(t: L.KTree, sp: L.ISpan): undefined | L.KTree { 
 	}
 	return r(t, 0)[0];
 }
-
-export function mk_parsetree<T>(parsetree: L.KTree, src_snips: Array<L.ISpanKey<T>>): Array<[React.ReactNode, L.ISpanKey<T>]> {
+export function mk_parsetree<T>(parsetree: L.KTree, src_snips: Array<L.ISpanKey<T>>): TParseTree<T> {
 	// KTree :: string | { kind: String, children: [KTree] }
 	// type ParseTree = KTree
 	// mk_parsetree :: KTree -> [(ISpan, k)] -> [<Span /> & ISpan]

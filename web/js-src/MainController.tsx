@@ -6,20 +6,28 @@ import { candidate, nk_span, repr_el_span, el2spk, span_contains, SPANTY, spaneq
 import MainContent from './MainContent'
 import * as L from './Lang'
 import { NUM_SNIP_DEPTH_COLORS } from './const'
-import { mk_span_chars, slice_parsetree, mk_parsetree } from './parsetree'
-import CtxSnip, { TPreview } from './CtxSnip'
+import { mk_span_chars, slice_parsetree, mk_parsetree, TParseTree, ParseTree, MaybeKeyedSubSnip } from './parsetree'
+import CtxSnip from './CtxSnip'
 import keycode from './keycode'
 import parsePath from 'parse-filepath'
 
-type SpanMeta = [ SPANTY, L.FwEdge ]
+type TSpanTyd<T> = [ SPANTY, T ]
+type SpanMeta = TSpanTyd<L.FwEdge>
 // !!!!!!!!!!!!!!
 // NOTE!!! MainSpanKey must remain serializable and unique. MainSpanKey is the main key that is used to identify things, and identification uses JSON equality for flexibility. Later we'll dedicate a MainSpanKey equality or use something hashable for use in a map, but for now obey these properties.
 type MainSpanKey = L.SpanKey<SpanMeta>
 type SplitSpanKeys = { ctxs: MainSpanKey[], nodes: MainSpanKey[][] }
-export type SnipWrapper<Tk> = (txt: React.ReactNode, sp_ks: L.SpanKey<Tk>[]) => React.ReactNode;
+export type SnipWrapper<Tk> = (txt: React.ReactNode, sp_ks: Tk) => React.ReactNode;
+export type SpanKeySnipWrapper<Tk> = SnipWrapper<L.SpanKey<Tk>[]>
 
-const wrap_snip: SnipWrapper<SpanMeta> = (txt, sp_ks) => {
-	const k_counts = sp_ks.reduce((acc, [sp, [spty, _el]]) => acc.update(spty, 0, i => i + 1), Map<L.SPANTY, number>());
+const wrap_snip: SpanKeySnipWrapper<TSpanTyd<unknown>> = (txt, sp_ks) => {
+	const k_counts = sp_ks.reduce((acc, [sp, k]) => {
+		if(k !== undefined) {
+			const [spty, _el] = k;
+			return acc.update(spty, 0, i => i + 1)
+		}
+		else return acc;
+	}, Map<L.SPANTY, number>());
 	return <span className={k_counts.map((cnt, k) => `snip-${k}-${Math.min(NUM_SNIP_DEPTH_COLORS, cnt)}`).join(' ')}>{txt}</span>
 }
 
@@ -290,7 +298,7 @@ export default class extends React.Component<TProps, TState> {
 	// 		, sp_ks.map(([sp, _k]) => sp)
 	// 	)
 	// }
-	protected mk_snip_preview = <Tk extends any>(hljs_result: any, sp: L.Span, k: [undefined | Tk] = [undefined]): Array<TPreview<Tk>> => {
+	protected mk_snip_preview = <Tk extends any>(hljs_result: any, sp: L.Span, k: Tk): TParseTree<Tk | undefined> => {
 		const src = this.state.src;
 		if(src !== undefined) {
 			const [isp] = mk_span_chars(src.body.lines, [[sp, k]]);
@@ -332,34 +340,36 @@ export default class extends React.Component<TProps, TState> {
 									{names[el.tag]}
 								</h2>
 							</header>
-							<ul id="edge_ctx" className="flatlist">
+							<ul id="edge_ctx" className="ctx-list">
 								{
 									this.state.src !== undefined && hljs_result !== undefined
-									&& ((): Array<[string, L.Span]> => {
+									&& ((): Array<[string, L.SPANTY, L.Span]> => {
 										switch(el.tag) {
 											case 'ArgEdge':
-												return el.contents.map((sp, i): [string, L.Span] => [['Use site', 'Bindsite'][i], sp]);
+												return el.contents.map((sp, i): [string, L.SPANTY, L.Span] => [['Use site', 'Bindsite'][i], [SPANTY.AG_TO_ARG, SPANTY.ARG][i], sp]);
 												break;
 											case 'AppEdge':
-												return el.contents.map((sp, i): [string, L.Span] => [['Callsite', 'Bindsite'][i], sp]);
+												return el.contents.map((sp, i): [string, L.SPANTY, L.Span] => [['Callsite', 'Bindsite'][i], [SPANTY.AG_TO_BIND, SPANTY.BIND_FROM_AG][i], sp]);
 												break;
 											case 'BindEdge':
-												return [['Callsite', el.contents]];
+												return [['Bindsite', SPANTY.BIND_CALLSITE, el.contents]];
 												break;
 											case 'RevBindEdge':
-												return [['Bindsite', el.contents]];
+												return [['Callsite', SPANTY.BIND_MATCHSITE, el.contents]];
 												break;
 										}
-									})().map(([name, sp]) => 
-										<CtxSnip<MainSpanKey>
+									})().map(([name, spty, sp]) => {
+										const spk: L.SpanKey<TSpanTyd<undefined>> = [sp, [spty, undefined]];
+										return <CtxSnip<L.SpanKey<TSpanTyd<undefined>>[]>
 											name={name}
 											filename={this.state.filelist[parseInt(sp[0])]}
 											span={sp}
 											tabbable={false}
-											preview={this.mk_snip_preview(hljs_result, sp)}
+											preview={this.mk_snip_preview(hljs_result, sp, [spk])}
 											key={sp.toString()}
-										/>
-									)
+											wrap_snip={wrap_snip}
+										/>;
+									})
 								}
 							</ul>
 						</section>
@@ -367,7 +377,7 @@ export default class extends React.Component<TProps, TState> {
 							<header>
 								<h1>History</h1>
 							</header>
-							<ul className="flatlist" id="history">
+							<ul className="ctx-list" id="history">
 								{
 									this.state.src && hljs_result
 									&& this.state.at_history.map((at_, i) => {
@@ -375,7 +385,7 @@ export default class extends React.Component<TProps, TState> {
 											const next = this.state.gr.get(node_);
 											if(next !== undefined) {
 												const at_sp = nk_span(next[0][0]);
-												return <CtxSnip<number, number>
+												return <CtxSnip<number | undefined, number>
 													onClick={this.historyClickHandler}
 													active={false}
 													click_key={i}
@@ -384,8 +394,9 @@ export default class extends React.Component<TProps, TState> {
 													name={el_.tag}
 													filename={this.state.filelist[parseInt(at_sp[0])]}
 													span={at_sp}
-													preview={this.mk_snip_preview<number>(hljs_result, at_sp, [i])}
+													preview={this.mk_snip_preview<number>(hljs_result, at_sp, i)}
 													key={i}
+													wrap_snip={id}
 												/>;
 											}
 									}).reverse()
@@ -396,7 +407,7 @@ export default class extends React.Component<TProps, TState> {
 				}
 			})() }
 			<section id="next_nodes_container">
-				<ul id="next_nodes" className="flatlist">
+				<ul id="next_nodes" className="ctx-list">
 					{
 						this.state.at_idx < this.state.at_history.size
 						&& this.state.src !== undefined
@@ -449,7 +460,7 @@ export default class extends React.Component<TProps, TState> {
 								})();
 								return nodes_.map(([name, spks], i) => {
 									const [sp, [_ty, [n, el]]] = spks[0];
-									return <CtxSnip<MainSpanKey[], MainSpanKey[]>
+									return <CtxSnip<L.SpanKey<SpanMeta>[], MainSpanKey[]>
 											onClick={this.nextNodeClickHandler}
 											onDoubleClick={this.nextNodeDoubleClickHandler}
 											onBlur={this.nextNodeBlurHandler}
@@ -469,7 +480,8 @@ export default class extends React.Component<TProps, TState> {
 											filename={this.state.filelist[parseInt(sp[0])]}
 											span={sp}
 											key={`${sp.toString()}-${n}=${i}`}
-											preview={this.mk_snip_preview(hljs_result, sp, [[spks[0]]])}
+											preview={this.mk_snip_preview(hljs_result, sp, spks)}
+											wrap_snip={wrap_snip}
 										/>
 								})
 							}

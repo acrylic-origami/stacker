@@ -1,18 +1,19 @@
 import React from 'react'
-import { SnipWrapper } from './MainController'
-import { PassthruProps, SnipClickHandler, SnipHoverHandler, MaybeKeyedSubSnip, TParseTree } from './MainContent'
+import { SnipWrapper, SpanKeySnipWrapper } from './MainController'
+import { PassthruProps, SnipClickHandler, SnipHoverHandler } from './MainContent'
+import { TParseTree, ParseTree, MaybeKeyedSubSnip } from './parsetree'
 import { List } from 'immutable'
 import { jsoneq, any } from './Util'
 import * as L from './Lang'
 import Snip from './Snip'
 
 interface TProps<Tk> extends PassthruProps<Tk> {
-	parsetree?: TParseTree<Tk>,
+	parsetree?: ParseTree<Tk>,
 	snip_refs?: Array<React.RefObject<HTMLAnchorElement>>,
 	onSnipHover: SnipHoverHandler<Tk>,
 	soft_selected?: Array<L.SpanKey<Tk>>,
 	// root_container_el?: HTMLElement,
-	wrap_snip: SnipWrapper<Tk>,
+	wrap_snip: SpanKeySnipWrapper<Tk>,
 };
 
 type TReducerState = [List<React.ReactNode>, number];

@@ -5,7 +5,8 @@ import hljs from 'highlight.js/lib/core'
 import hs from 'highlight.js/lib/languages/haskell'
 import IntervalTree from '@flatten-js/interval-tree'
 import Snip from './Snip'
-import { mk_span_chars, mk_parsetree } from './parsetree'
+import { mk_span_chars, mk_parsetree, TParseTree, ParseTree, MaybeKeyedSubSnip } from './parsetree'
+import { SnipWrapper, SpanKeySnipWrapper } from './MainController'
 import { map_intersect, compare, any } from './Util'
 import { span_contains, candidate, spaneq, span_intersects } from './Lang'
 import * as L from './Lang'
@@ -28,7 +29,7 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 	src?: L.Src,
 	span_ks: Array<L.SpanKey<Tk>>,
 	// should_scroll_to: (ks: Array<L.SpanKey<Tk>>) => boolean,
-	wrap_snip: (t: React.ReactNode, ks: Array<L.SpanKey<Tk>>) => React.ReactNode,
+	wrap_snip: SpanKeySnipWrapper<Tk>,
 	soft_selected?: Array<L.SpanKey<Tk>>,
 	onSnipHover: SnipHoverHandler<Tk>,
 	ctx_renderer: (hljs_result: any) => React.ReactNode,
@@ -37,13 +38,12 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 }
 
 // type KeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>>> // outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the snippet location
-export type MaybeKeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>> | undefined> // outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the snippet location
 // NOTE: _all_ of these are props-driven, NONE OF THESE ARE EVENT-DRIVEN. This means that all the work this component does is _totally driven by props_.
-export type TParseTree<Tk> = Array<[React.ReactNode, MaybeKeyedSubSnip<Tk>]>
+// export type TParseTree<Tk> = Array<[React.ReactNode, MaybeKeyedSubSnip<Tk>]>
 export type SnipHoverHandler<Tk> = (e: React.SyntheticEvent, sp_ks: Array<L.SpanKey<Tk>>) => void
 interface TState<Tk> {
 	root_container_el?: HTMLElement,
-	parsetree?: TParseTree<Tk>, 
+	parsetree?: ParseTree<Tk>,
 	snip_focuses?: L.Span,
 	hljs_result: any,
 	snip_refs: Array<React.RefObject<HTMLAnchorElement>>

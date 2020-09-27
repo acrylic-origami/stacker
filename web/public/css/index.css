@@ -18,7 +18,7 @@ a.unpointer {
 	cursor:auto;
 }
 
-ul.flatlist, ol.flatlist {
+ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 	list-style-type:none;
 	margin:0;
 	padding:0;
@@ -26,6 +26,7 @@ ul.flatlist, ol.flatlist {
 	ul.flatlist > li, ol.flatlist > li {
 		margin:0;
 		padding:0;
+		display:inline-block;
 	}
 	
 .src-container {

@@ -2,6 +2,8 @@ import React from 'react'
 import Snip from './Snip'
 import * as L from './Lang'
 import { List } from 'immutable'
+import { SnipWrapper } from './MainController';
+import { TParseTree } from './parsetree'
 
 const MAX_LINES = 4;
 
@@ -9,11 +11,10 @@ function ppr_loc(loc: L.Loc): string {
 	return `(${loc[0]}, ${loc[1]})`;
 }
 
-export type TPreview<Tk> = [React.ReactNode, L.ISpanKey<undefined | [undefined | Tk]>]
-
+// okay, the main problem is that this is now obsolete and thus hard to motivate: Tk used to be used for snip clicks, but we don't allow that anymore. The only reason we still have it is for snip wrapping, but that expects all of the keys to be packaged with a span, whereas mk_preview in MainController tries to be general and instead unions the undefined in the top-most level, allowing us to pass it that way.
 interface TProps<Tk, Tu> {
-	onSnipClick?: (e: React.SyntheticEvent, k: Tk) => void,
-	preview: Array<TPreview<Tk>>,
+	onSnipClick?: (e: React.SyntheticEvent, k: Tk | undefined) => void,
+	preview: TParseTree<Tk | undefined>,
 	onDoubleClick?: (e: Event, u: Tu) => void,
 	onClick?: (e: Event, u: Tu) => void,
 	onFocus?: (e: Event, u: Tu) => void,
@@ -21,6 +22,7 @@ interface TProps<Tk, Tu> {
 	click_key?: Tu,
 	active: boolean,
 	className?: string,
+	wrap_snip: SnipWrapper<Tk>,
 	span: L.Span,
 	name: string,
 	filename: string,
@@ -35,7 +37,7 @@ interface TState {
 	last_focus: number,
 	last_click: number
 }
-export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, Tu>, TState> {
+export default class<Tk = undefined, Tu = undefined> extends React.PureComponent<TProps<Tk, Tu>, TState> {
 	public static defaultProps = {
 		active: false,
 	}
@@ -90,7 +92,6 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 		e.stopPropagation();
 		const e_ = e.nativeEvent;
 		if(this.props.onClick !== undefined && this.props.click_key !== undefined && e.timeStamp > this.state.last_focus + DEBOUNCE_FOCUS_CLICK) {
-			console.log('??');
 			this.props.onClick(e_, this.props.click_key);
 		}
 		this.setState({ last_click: e.timeStamp });
@@ -138,26 +139,26 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 			<div className="src-container" ref={e => this.setState({ root_container_el: e || undefined })}>
 				<pre>
 					<code className="language-haskell hljs" onClick={this.codeClickHandler}>
-						&hellip;{this.props.preview.map(([txt, [sp, k]]) =>
-							k === undefined
-								? <span key={sp.toString()}>{txt}</span>
-								: <Snip<Tk | undefined>
-										onClick={this.snipClickHandler}
-										onMouseLeave={this.snipHoverHandler}
-										onMouseEnter={this.snipHoverHandler}
-										ks={[k[0]]}
-										key={sp.toString()}
+						&hellip;{this.props.preview.map(([txt, [isp, sp_ks]]) =>
+							sp_ks === undefined
+								? <span key={isp.toString()}>{txt}</span>
+								: <Snip<undefined>
+										// onClick={this.snipClickHandler}
+										// onMouseLeave={this.snipHoverHandler}
+										// onMouseEnter={this.snipHoverHandler}
+										ks={[undefined]} // used to be an sp_ks for selection, but now it's obsolete since we don't click on these to move forward
+										key={isp.toString()}
 										root={this.state.root_container_el}
 										className={
 											(this.state.snip_hovered
 												? 'focused'
 												: '')
-											+ (k[0] === undefined
+											+ (sp_ks === undefined
 												? 'unpointer'
 												: '')
 										}
 									>
-									{txt}
+									{this.props.wrap_snip(txt, sp_ks)}
 								</Snip>
 						)}&hellip;
 					</code>
