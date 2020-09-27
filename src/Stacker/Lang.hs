@@ -213,7 +213,7 @@ el_spans = lens spget spset where
   spset (ArgEdge a b) (asp:bsp:[]) = ArgEdge (a & s_span .~ asp) (b & s_span .~ bsp)
   spset (AppEdge a b) (asp:bsp:[]) = AppEdge (a & s_span .~ asp) (b & s_span .~ bsp)
   spset (BindEdge _sp) [sp] = BindEdge sp
-  spset (RevBindEdge _sp) [sp] = BindEdge sp
+  spset (RevBindEdge _sp) [sp] = RevBindEdge sp
 
 type NodeGr a = Gr.Gr ((NodeKey a, Int)) EdgeLabel
 type NodeState a = State (S.Set AppGroup) ([(Gr.Node, EdgeLabel)], [Gr.LEdge EdgeLabel])
@@ -266,7 +266,7 @@ instance ToJSON BindKey where
 instance ToJSON EdgeLabel where
   toJSON l = Aeson.object [
       defTagField .= el_ctor l
-      , (defContentsField, case l of { ArgEdge a b -> toJSON (a, b); AppEdge a b -> toJSON (a, b); BindEdge a -> toJSON a })
+      , (defContentsField, case l of { ArgEdge a b -> toJSON (a, b); AppEdge a b -> toJSON (a, b); BindEdge a -> toJSON a; RevBindEdge a -> toJSON a  })
     ]
 
 type UAdjList a b = IM.IntMap (a, [(Gr.Node, b)])

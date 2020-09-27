@@ -375,8 +375,8 @@ export default class extends React.Component<TProps, TState> {
 												const [_sp, [_ty, [_n, el_]]] = spk;
 												assert(el_.tag === 'BindEdge' || el_.tag === 'RevBindEdge', `Unexpected ${el_.tag}`)
 												const names : Partial<Record<L.EdgeLabelTag, string>> = {
-													BindEdge: 'Callsite',
-													RevBindEdge: 'Binding RHS'
+													RevBindEdge: 'Callsite',
+													BindEdge: 'Binding RHS'
 												}
 												return [
 													names[el_.tag] || '',
