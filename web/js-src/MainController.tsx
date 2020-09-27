@@ -144,13 +144,6 @@ export default class extends React.Component<TProps, TState> {
 	constructor(props: TProps) {
 		super(props);
 		this.main_root_ref = React.createRef();
-		
-		// type Loc = (Int, Int)
-		// type ISpan = (fileidx: String (show Int), start: Loc, end: Loc)
-		// type NodeKey = { tag: "NKApp" | "NKBind", contents: [ISpan] | ISpan }
-		// type EdgeLabel = { tag: "ArgEdge" | "AppEdge" | "BindEdge", contents: (ISpan, ISpan) | ISpan }
-		// type FWEdge = (Int, EdgeLabel)
-		// window.addEventListener('popstate', this.handle_uri_term);
 	}
 	
 	////////////////////////////////////////////////////////////////////////
@@ -535,15 +528,7 @@ export default class extends React.Component<TProps, TState> {
 				// for now not overloaded: just cancel the selected mode
 				this.cancel_mode();
 				break;
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
+			case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
 				this.setState(({ at_spks }) => ({
 					soft_selected: at_spks.nodes[
 						Math.min(
