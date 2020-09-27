@@ -29,7 +29,7 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 	span_ks: Array<L.SpanKey<Tk>>,
 	// should_scroll_to: (ks: Array<L.SpanKey<Tk>>) => boolean,
 	wrap_snip: (t: React.ReactNode, ks: Array<L.SpanKey<Tk>>) => React.ReactNode,
-	soft_selected?: L.SpanKey<Tk>,
+	soft_selected?: Array<L.SpanKey<Tk>>,
 	onSnipHover: SnipHoverHandler<Tk>,
 	ctx_renderer: (hljs_result: any) => React.ReactNode,
 	scroll_to?: L.Span

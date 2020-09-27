@@ -24,16 +24,22 @@ const wrap_snip: SnipWrapper<SpanMeta> = (txt, sp_ks) => {
 
 function ag2spks(ag: L.AppGroup): SplitSpanKeys {
 	const ctxs: MainSpanKey[] = [];
-	const nodes: MainSpanKey[] = [];
+	const nodes: MainSpanKey[][] = [];
 	for(const fw_edge of ag) {
 		const el = fw_edge[1];
 		switch(el.tag) {
 			case 'ArgEdge':
-				nodes.push([el.contents[0], [SPANTY.AG_TO_ARG, fw_edge]]);
+				nodes.push([
+					[el.contents[0], [SPANTY.AG_TO_ARG, fw_edge]],
+					[el.contents[1], [SPANTY.AG_TO_ARG, fw_edge]],
+				]);
 				ctxs.push([el.contents[1], [SPANTY.ARG, fw_edge]]);
 				break;
 			case 'AppEdge':
-				nodes.push([el.contents[0], [SPANTY.AG_TO_BIND, fw_edge]]);
+				nodes.push([
+					[el.contents[0], [SPANTY.AG_TO_BIND, fw_edge]],
+					[el.contents[1], [SPANTY.AG_TO_BIND, fw_edge]]
+				]);
 				ctxs.push([el.contents[1], [SPANTY.BIND_FROM_AG, fw_edge]]);
 				break;
 			default:
@@ -66,15 +72,22 @@ function fw_edge2spks(fw_edge: L.FwEdge, gr: L.NodeGraph): SplitSpanKeys {
 					case "ArgEdge":
 						// acc.push([el.contents[0], [SPANTY.AG_TO_ARG, el]]);
 						assert(next_nk.tag === 'NKBind');
-						const nodes = new Array<MainSpanKey>();
+						const nodes: MainSpanKey[][] = [];
 						for(const fw_edge_ of next_edges) {
 							const [targ, el_] = fw_edge_;
 							switch(el_.tag) {
 								case 'BindEdge':
-									nodes.push([el_.contents, [SPANTY.BIND_CALLSITE, fw_edge_]]);
+									// const next__ = this.state.gr.get(targ); // kind of annoying but necessary: get the appgroup location based on the destination rather than using just the 
+									nodes.push([
+										[nk_span(next_nk), [SPANTY.BIND_CALLSITE, fw_edge_]],
+										[el_.contents, [SPANTY.BIND_CALLSITE, fw_edge_]]
+									]); // push the bind site too as a clickable: this is to support toggling
 									break;
 								case 'RevBindEdge':
-									nodes.push([el_.contents, [SPANTY.BIND_MATCHSITE, fw_edge_]]);
+									nodes.push([
+										[nk_span(next_nk), [SPANTY.BIND_MATCHSITE, fw_edge_]],
+										[el_.contents, [SPANTY.BIND_MATCHSITE, fw_edge_]]
+									]);
 									break;
 							}
 						}
@@ -117,8 +130,10 @@ interface TState {
 	src?: L.Src,
 	src_req_idx: number,
 	scroll_to?: L.Span,
-	soft_selected?: MainSpanKey, // the instance in the next nodes list that is soft-selected; note, this is distinct from the highlight on hover of a component within the code block
-	snip_active?: MainSpanKey
+	soft_selected?: MainSpanKey[], // the instance in the next nodes list that is soft-selected; note, this is distinct from the highlight on hover of a component within the code block // multiple instances because of toggling to tab
+	snip_active?: MainSpanKey,
+	
+	num_toggles: number,
 };
 
 type TProps = {}
@@ -139,6 +154,8 @@ export default class extends React.Component<TProps, TState> {
 		scroll_to: undefined,
 		soft_selected: undefined,
 		snip_active: undefined,
+		
+		num_toggles: 0,
 	}
 	protected main_root_ref: React.RefObject<HTMLDivElement>
 	constructor(props: TProps) {
@@ -187,7 +204,9 @@ export default class extends React.Component<TProps, TState> {
 					this.state.src !== undefined
 					&& pstate.src !== undefined
 					&& pstate.src.path !== this.state.src.path
-				)
+				),
+			scroll_to: pstate.scroll_to !== this.state.scroll_to,
+			num_toggles: pstate.num_toggles !== this.state.num_toggles,
 		};
 		if(diff.at_idx) {
 			this.setState(({ at_idx }) => {
@@ -229,6 +248,12 @@ export default class extends React.Component<TProps, TState> {
 						}))
 				}
 			}
+		if(diff.num_toggles) {
+			const soft_selected = this.state.soft_selected;
+			if(soft_selected !== undefined)
+				this.setState({
+					scroll_to: soft_selected[this.state.num_toggles % soft_selected.length][0] // TODO is this the right place to decide based on num toggles? dunno, it's a bit isolated. I wish I could decide at scroll time, instead of having it flow down
+				})
 		}
 	}
 	
@@ -368,11 +393,11 @@ export default class extends React.Component<TProps, TState> {
 								const [_n, el] = at;
 								const { nodes } = this.state.at_spks;
 								
-								const nodes_ = ((): Array<[string, MainSpanKey]> => {
+								const nodes_ = ((): Array<[string, MainSpanKey[]]> => {
 									switch(el.tag) {
 										case 'ArgEdge':
-											return nodes.map((spk): [string, MainSpanKey] => {
-												const [_sp, [_ty, [_n, el_]]] = spk;
+											return nodes.map((spks): [string, MainSpanKey[]] => {
+												const [_sp, [_ty, [_n, el_]]] = spks[0];
 												assert(el_.tag === 'BindEdge' || el_.tag === 'RevBindEdge', `Unexpected ${el_.tag}`)
 												const names : Partial<Record<L.EdgeLabelTag, string>> = {
 													RevBindEdge: 'Callsite',
@@ -380,15 +405,15 @@ export default class extends React.Component<TProps, TState> {
 												}
 												return [
 													names[el_.tag] || '',
-													spk
+													spks
 												];
 											});
 											break;
 										case 'AppEdge':
 										case 'BindEdge':
 										case 'RevBindEdge':
-											return nodes.map((spk): [string, MainSpanKey] => {
-												const [_sp, [_ty, [_n, el_]]] = spk;
+											return nodes.map((spks): [string, MainSpanKey[]] => {
+												const [_sp, [_ty, [_n, el_]]] = spks[0];
 												assert(el_.tag === 'AppEdge' || el_.tag === 'ArgEdge', `Unexpected ${el_.tag}`)
 												const names : Partial<Record<L.EdgeLabelTag, string>> = {
 													AppEdge: 'Value Callsite',
@@ -396,7 +421,7 @@ export default class extends React.Component<TProps, TState> {
 												}
 												return [
 													names[el_.tag] || '',
-													spk
+													spks
 												]
 											});
 											break;
@@ -404,22 +429,29 @@ export default class extends React.Component<TProps, TState> {
 											return [];
 									}
 								})();
-								return nodes_.map(([name, sp_k], i) => {
-									const [sp, [_ty, [n, el]]] = sp_k;
-									return <CtxSnip<MainSpanKey[], MainSpanKey>
+								return nodes_.map(([name, spks], i) => {
+									const [sp, [_ty, [n, el]]] = spks[0];
+									return <CtxSnip<MainSpanKey[], MainSpanKey[]>
 											onClick={this.nextNodeClickHandler}
 											onDoubleClick={this.nextNodeDoubleClickHandler}
 											onBlur={this.nextNodeBlurHandler}
 											onFocus={this.nextNodeFocusHandler}
-											click_key={sp_k}
+											click_key={spks}
 											tabbable={true}
-											active={jsoneq(this.state.snip_active, sp_k) || jsoneq(this.state.soft_selected, sp_k)}
+											active={
+												any(sp_k =>
+														this.state.soft_selected !== undefined
+														&& any(soft_spk => jsoneq(soft_spk, sp_k), this.state.soft_selected)
+													, spks
+												)
+											}
+											className={any(sp_k => jsoneq(this.state.snip_active, sp_k), spks) ? 'active' : ''}
 											// onSnipClick={this.snipClickHandler}
 											name={name}
 											filename={this.state.filelist[parseInt(sp[0])]}
 											span={sp}
 											key={`${sp.toString()}-${n}=${i}`}
-											preview={this.mk_snip_preview(hljs_result, sp, [[sp_k]])}
+											preview={this.mk_snip_preview(hljs_result, sp, [[spks[0]]])}
 										/>
 								})
 							}
@@ -471,25 +503,25 @@ export default class extends React.Component<TProps, TState> {
 	// next node click vs. focus is fairly subtle: without care (e.g. both handled by click handler, or without the event queue to avoid races within CtxSnip), these might be possible:
 	// 1. both handled by click handler: tabbing through a single-element list will result in it being clicked, because it was previously selected
 	// 2. no event queue: since click also focuses and raises a focus event in CtxSnip, it could possibly invoke the focus handler first (making it soft-selected), then clicking, which would advance it with a single click.
-	protected nextNodeDoubleClickHandler = (e: Event, soft_selected: MainSpanKey): void => {
-		this.advance_to(soft_selected);
+	protected nextNodeDoubleClickHandler = (e: Event, soft_selected: MainSpanKey[]): void => {
+		this.advance_to(soft_selected[0]);
 	}
-	protected nextNodeClickHandler = (e: Event, soft_selected: MainSpanKey): void => {
+	protected nextNodeClickHandler = (e: Event, soft_selected: MainSpanKey[]): void => {
 		// console.log(soft_selected, this.state.soft_selected);
 		if(soft_selected === this.state.soft_selected && this.state.soft_selected !== undefined) {
-			this.advance_to(this.state.soft_selected);
+			this.advance_to(this.state.soft_selected[0]);
 		}
 		else {
 			this.nextNodeFocusHandler(e, soft_selected); // risky re: event type, but expressive
 		}
 	}
-	protected nextNodeFocusHandler = (e: Event, soft_selected: MainSpanKey): void => {
+	protected nextNodeFocusHandler = (e: Event, soft_selected: MainSpanKey[]): void => {
 		this.setState({
 			soft_selected,
-			scroll_to: soft_selected[0]
+			scroll_to: soft_selected[this.state.num_toggles % soft_selected.length][0] // TODO is this the right place to decide based on num toggles? dunno, it's a bit isolated. I wish I could decide at scroll time, instead of having it flow down
 		});
 	}
-	protected nextNodeBlurHandler = (e: Event, soft_selected_: MainSpanKey): void => {
+	protected nextNodeBlurHandler = (e: Event, soft_selected_: MainSpanKey[]): void => {
 		this.setState(({ soft_selected }) => ({ soft_selected: soft_selected_ === soft_selected ? undefined : soft_selected }));
 	}
 	protected historyClickHandler = (e: Event | React.SyntheticEvent, at_idx: number): void => {
@@ -557,6 +589,10 @@ export default class extends React.Component<TProps, TState> {
 				if(e.ctrlKey) {
 					this.setState(({ at_idx, at_history }) => ({ at_idx: Math.min(at_history.size - 1, at_idx + 1) }));
 				}
+				break;
+			case 'T':
+			case 't':
+				this.setState(({ num_toggles }) => ({ num_toggles: num_toggles + 1 }));
 				break;
 		}
 	}

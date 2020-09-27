@@ -10,7 +10,7 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 	parsetree?: TParseTree<Tk>,
 	snip_refs?: Array<React.RefObject<HTMLAnchorElement>>,
 	onSnipHover: SnipHoverHandler<Tk>,
-	soft_selected?: L.SpanKey<Tk>,
+	soft_selected?: Array<L.SpanKey<Tk>>,
 	// root_container_el?: HTMLElement,
 	wrap_snip: SnipWrapper<Tk>,
 };
@@ -30,7 +30,7 @@ export default class<Tk> extends React.PureComponent<TProps<Tk>, {}> {
 								fwd_ref={this.props.snip_refs && this.props.snip_refs[i]}
 								onMouseEnter={this.props.onSnipHover}
 								onMouseLeave={this.props.onSnipHover}
-								force_focus={any(spk => jsoneq(this.props.soft_selected, spk), sp_ks)}
+								force_focus={any(spk => any(soft_spk => jsoneq(soft_spk, spk), this.props.soft_selected || []), sp_ks)}
 								ks={sp_ks}
 								key={sp.toString()}
 								// root={this.props.root_container_el}
