@@ -20,6 +20,7 @@ interface TProps<Tk, Tu> {
 	onBlur?: (e: Event, u: Tu) => void,
 	click_key?: Tu,
 	active: boolean,
+	className?: string,
 	span: L.Span,
 	name: string,
 	filename: string,
@@ -36,7 +37,7 @@ interface TState {
 }
 export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, Tu>, TState> {
 	public static defaultProps = {
-		active: false
+		active: false,
 	}
 	protected aref: React.RefObject<HTMLAnchorElement>;
 	constructor(props: TProps<Tk, Tu>) {
@@ -164,7 +165,7 @@ export default class<Tk, Tu = undefined> extends React.PureComponent<TProps<Tk, 
 			</div>
 		</React.Fragment>
 		return <li
-			className={`ctx-snip ${this.props.active ? 'active' : ''}`}>
+			className={`ctx-snip ${this.props.active ? 'active' : ''} ${this.props.className}`}>
 			{ this.props.tabbable
 				? <a href="#"
 						ref={this.aref}
