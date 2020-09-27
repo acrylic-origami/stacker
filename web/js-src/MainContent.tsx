@@ -32,7 +32,8 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 	soft_selected?: Array<L.SpanKey<Tk>>,
 	onSnipHover: SnipHoverHandler<Tk>,
 	ctx_renderer: (hljs_result: any) => React.ReactNode,
-	scroll_to?: L.Span
+	scroll_to?: L.Span,
+	children: React.ReactNode,
 }
 
 // type KeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>>> // outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the snippet location
@@ -205,6 +206,7 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 		</section>
 		<section id="src_root_container">
 			<header>
+				{this.props.children}
 				<h1>{this.props.src && this.props.src.path}</h1>
 			</header>
 			<section ref={this.rootRefChangeHandler} className="src-container">

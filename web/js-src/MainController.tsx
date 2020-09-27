@@ -1,6 +1,6 @@
 import React from 'react'
 import Q from 'q'
-import { Map, Set, List } from 'immutable'
+import { Map, Set, List, OrderedSet } from 'immutable'
 import { id, map_intersect, assert, any, tuple, jsoneq } from './Util'
 import { candidate, nk_span, repr_el_span, el2spk, span_contains, SPANTY, spaneq } from './Lang'
 import MainContent from './MainContent'
@@ -9,12 +9,13 @@ import { NUM_SNIP_DEPTH_COLORS } from './const'
 import { mk_span_chars, slice_parsetree, mk_parsetree } from './parsetree'
 import CtxSnip, { TPreview } from './CtxSnip'
 import keycode from './keycode'
+import parsePath from 'parse-filepath'
 
 type SpanMeta = [ SPANTY, L.FwEdge ]
 // !!!!!!!!!!!!!!
 // NOTE!!! MainSpanKey must remain serializable and unique. MainSpanKey is the main key that is used to identify things, and identification uses JSON equality for flexibility. Later we'll dedicate a MainSpanKey equality or use something hashable for use in a map, but for now obey these properties.
 type MainSpanKey = L.SpanKey<SpanMeta>
-type SplitSpanKeys = { ctxs: MainSpanKey[], nodes: MainSpanKey[] }
+type SplitSpanKeys = { ctxs: MainSpanKey[], nodes: MainSpanKey[][] }
 export type SnipWrapper<Tk> = (txt: React.ReactNode, sp_ks: L.SpanKey<Tk>[]) => React.ReactNode;
 
 const wrap_snip: SnipWrapper<SpanMeta> = (txt, sp_ks) => {
@@ -126,6 +127,8 @@ interface TState {
 	at_spks_merged: MainSpanKey[], // even more egregious anti-single-source-of-truth, needed to avoid new objects made at render time
 	at_spks_idx: number, // use this to check if at_spks is stale
 	
+	current_file: number, // implicit invariant that if `at` isn't undefined, this must be equal to the file location in the node that it references... or the one currently being shown... yeah. Hmm. Basically, this has to reflect the current file that wants to be pointed to with some degree of freedom by the user
+	file_tabs: OrderedSet<string>,
 	filelist: string[],
 	src?: L.Src,
 	src_req_idx: number,
@@ -144,9 +147,11 @@ export default class extends React.Component<TProps, TState> {
 		at_idx: -1,
 		at_history: List(), // List (?FWEdge)
 		at_spks: { nodes: [], ctxs: [] },
-		at_spks_merged: [],
-		at_spks_idx: -1,
+		at_spks_merged: [], // memoize this to avoid deep comparison: do direct object comparison for the spks in MainContent
+		at_spks_idx: -1, // synchronicity with at_idx: used to check if spks is up to date or not
 		
+		current_file: -1,
+		file_tabs: OrderedSet(), //file_tabs <= filelist
 		filelist: [], // [filename: String]
 		
 		src: undefined, // ?string
@@ -182,12 +187,15 @@ export default class extends React.Component<TProps, TState> {
 					const gr: L.NodeGraph = Map(state_init_.gr);
 					const at0 = state_init_.at[0];
 					const next = gr.get(at0[0]);
+					const next_span = next && nk_span(next[0][0]);
+					const span_idx = next_span && parseInt(next_span[0]);
 					return {
 						at_idx: Math.min(at_idx + 1, at_history.size),
 						at_history: at_history.push(at0),
 						gr,
 						filelist,
-						scroll_to: next && nk_span(next[0][0])
+						current_file: span_idx !== undefined ? span_idx : -1,
+						scroll_to: next_span
 					};
 				})
 			});
@@ -198,6 +206,7 @@ export default class extends React.Component<TProps, TState> {
 			at_history: pstate.at_history !== this.state.at_history,
 			at_spks: pstate.at_spks !== this.state.at_spks,
 			gr: pstate.gr !== this.state.gr,
+			current_file: pstate.current_file !== this.state.current_file,
 			src:
 				((this.state.src === undefined) !== (pstate.src === undefined))
 				|| (
@@ -222,32 +231,41 @@ export default class extends React.Component<TProps, TState> {
 				else return null;
 			});
 		}
-		if(diff.at_spks) {
-			this.setState(({ at_spks }) => ({ at_spks_merged: at_spks.ctxs.concat(at_spks.nodes) }));
+		if(diff.at_spks || diff.current_file) {
+			// console.log(this.state.at_spks, this.state.current_file);
+			this.setState(({ at_spks }) => ({
+				at_spks_merged: at_spks.ctxs.concat(at_spks.nodes.flat()).filter(([sp, _k]) => parseInt(sp[0]) === this.state.current_file) // only show spankeys that are found in the current file
+			}));
 		}
-		if((diff.at_idx || diff.at_history) && this.state.at_idx < this.state.at_history.size) {
-			const at = this.state.at_history.get(this.state.at_idx);
-			if(at !== undefined) {
-				let at_file = at[1].contents[0];
-				if(typeof at_file !== 'string')
-					at_file = at_file[0]; // ArgEdge or AppEdge, a list of edges. need to go one further in
-				
-				const at_path = this.state.filelist[parseInt(at_file)]; // this.state.gr.jsg_gr.get(this.state.at[0]).key.span.path;
-				if(this.state.src === undefined && at_path !== undefined || this.state.src !== undefined && at_path !== this.state.src.path) {
-					const stash_req_idx = this.state.src_req_idx;
-					fetch(`/f?n=${encodeURIComponent(at_path.replace('lib/', '').replace('.hs', '.hie'))}`)
-						.then(r => r.text())
-						.then(t => this.setState(st => {
-							if(this.state.src_req_idx === stash_req_idx) {
-								return {
-									src_req_idx: stash_req_idx + 1,
-									src: { path: at_path, body: { raw: t, lines: t.split('\n') } }
-								};
-							}
-							else return null;
-						}))
-				}
-			}
+		if(diff.scroll_to) {
+			const scroll_to_file_idx = this.state.scroll_to && parseInt(this.state.scroll_to[0])
+			if(scroll_to_file_idx !== undefined && scroll_to_file_idx !== this.state.current_file)
+				this.setState({ current_file: scroll_to_file_idx });
+		}
+		if(diff.current_file) {
+			// let at_file = at[1].contents[0];
+			// if(typeof at_file !== 'string')
+			// 	at_file = at_file[0]; // ArgEdge or AppEdge, a list of edges. need to go one further in
+			
+			// const at_path = this.state.filelist[parseInt(at_file)]; // this.state.gr.jsg_gr.get(this.state.at[0]).key.span.path;
+			const current_file = this.state.filelist[this.state.current_file];
+			// if(this.state.src === undefined && current_file !== undefined || this.state.src !== undefined && current_file !== this.state.src.path) {
+				const stash_req_idx = this.state.src_req_idx;
+				fetch(`/f?n=${encodeURIComponent(current_file.replace('lib/', '').replace('.hs', '.hie'))}`)
+					.then(r => r.text())
+					.then(t => this.setState(st => {
+						if(this.state.src_req_idx === stash_req_idx) {
+							return {
+								file_tabs: st.file_tabs.add(current_file),
+								src_req_idx: stash_req_idx + 1,
+								src: { path: current_file, body: { raw: t, lines: t.split('\n') } }
+							};
+						}
+						else return null;
+					}))
+			// }
+		}
+		
 		if(diff.num_toggles) {
 			const soft_selected = this.state.soft_selected;
 			if(soft_selected !== undefined)
@@ -553,6 +571,19 @@ export default class extends React.Component<TProps, TState> {
 				break;
 		}
 	}
+	protected filetabClickHandler = (e: React.SyntheticEvent, fname: string): void => {
+		const next_at_idx = this.state.at_history.reverse().map((at, i) => {
+			const next = this.state.gr.get(at[0]);
+			if(next !== undefined && this.state.filelist[parseInt(nk_span(next[0][0])[0])] === fname) {
+				return this.state.at_history.size - i - 1;
+			}
+			else return undefined;
+		}).filter(i => i !== undefined).first(undefined);
+		this.setState(({ at_idx, current_file }) => ({
+			at_idx: next_at_idx !== undefined ? next_at_idx : at_idx,
+			current_file: this.state.filelist.indexOf(fname)
+		}));
+	}
 	protected keyPressHandler = (e: KeyboardEvent): void => {
 		console.log(e.key);
 		switch(e.key) {
@@ -603,19 +634,32 @@ export default class extends React.Component<TProps, TState> {
 	///////  RENDERER  ///////
 	//////////////////////////
 	
-	render = () => <div
-		onClick={this.cancel_mode}
-		id="main_root"
-		ref={this.main_root_ref}>
-		<MainContent<SpanMeta>
-			ctx_renderer={this.render_ctx_bar}
-			src={this.state.src}
-			span_ks={this.state.at_spks_merged || []}
-			onSnipHover={this.snipHoverHandler}
-			scroll_to={this.state.scroll_to}
-			soft_selected={this.state.soft_selected}
-			wrap_snip={wrap_snip}
-			onSnipClick={this.snipClickHandler}
-		/>
-	</div>
+	render = () => {
+		const at = this.state.at_history.get(this.state.at_idx);
+		const next = at && this.state.gr.get(at[0]);
+		const next_fname = next && this.state.filelist[parseInt(nk_span(next[0][0])[0])];
+		return <div
+			onClick={this.cancel_mode}
+			id="main_root"
+			ref={this.main_root_ref}>
+			<MainContent<SpanMeta>
+				ctx_renderer={this.render_ctx_bar}
+				src={this.state.src}
+				span_ks={this.state.at_spks_merged || []}
+				onSnipHover={this.snipHoverHandler}
+				scroll_to={this.state.scroll_to}
+				soft_selected={this.state.soft_selected}
+				wrap_snip={wrap_snip}
+				onSnipClick={this.snipClickHandler}
+			>
+				{ /* can't tell if this is more or less misleading putting headers as children */ }
+				<ul id="file_tabs" className="flatlist">
+					{this.state.file_tabs.map((fname, i) =>
+						<li className={`file-tab ${fname === next_fname ? 'selected' : ''}`} key={fname}>
+							<a href="#" onClick={e => this.filetabClickHandler(e, fname) /* technically there's a race condition between setting the new state and a new render, wonder if this is worth worrying about. */}>{parsePath(fname).base}</a>
+						</li>)}
+				</ul>
+			</MainContent>
+		</div>;
+	}
 }
