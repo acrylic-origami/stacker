@@ -33,8 +33,7 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 	soft_selected?: Array<L.SpanKey<Tk>>,
 	onSnipHover: SnipHoverHandler<Tk>,
 	ctx_renderer: (hljs_result: any) => React.ReactNode,
-	scroll_to?: L.Span,
-	children: React.ReactNode,
+	scroll_to?: L.Span
 }
 
 // type KeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>>> // outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the snippet location
@@ -196,33 +195,30 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 	// 			break;
 	// 	}
 	// }
-	rootRefChangeHandler = (root_container_el: HTMLElement): void => this.setState({ root_container_el });
+	rootRefChangeHandler = (root_container_el: HTMLDivElement): void => this.setState({ root_container_el });
 	// snipClickHandler = (e, ks) => this.props.onSnipClick(this.candidate(ks));
 	// the trickiest part is to figure out a way to distinguish the type of the span of the "reason" given that the list of elements coming in are completely agnostic to that. So find some way to mark it, plus add all the accompanying data in an elegant way. Otherwise, just pushing in keys of all the nodes that these are pointing to, hopefully without intersection (ah wait. There will be intersection with duplicated names. So... maybe not a map? As if I needed it to be unique anyways. multimap? eh. I expect them to be unique to each span. So no. No multimap. Really the span_ks should be their own keys. I just don't like to serialize and deserialize the data just for mapping efficiency. Although Immutable Maps can do better than that. So just key based on the straight span_ks. yeah.)
 	
-	render = () => <section id="main_content">
-		<section id="context_bar">
-			{this.props.ctx_renderer(this.state.hljs_result)}
-		</section>
-		<section id="src_root_container">
-			<header>
-				{this.props.children}
-				<h1>{this.props.src && this.props.src.path}</h1>
-			</header>
-			<section ref={this.rootRefChangeHandler} className="src-container">
-				<pre>
-					<code id="src_root" className="language-haskell hljs">
-						<CodeBlock<Tk>
-							soft_selected={this.props.soft_selected}
-							snip_refs={this.state.snip_refs}
-							parsetree={this.state.parsetree}
-							onSnipHover={this.props.onSnipHover}
-							onSnipClick={this.props.onSnipClick}
-							wrap_snip={this.props.wrap_snip}
-							/>
-					</code>
-				</pre>
+	render = () => 
+		<section id="main_content">
+			<section id="context_bar">
+				{this.props.ctx_renderer(this.state.hljs_result)}
 			</section>
+			<div id="src_root_container" ref={this.rootRefChangeHandler}>
+				<section id="src_wrap_container" className="src-container">
+					<pre>
+						<code id="src_root" className="language-haskell hljs">
+							<CodeBlock<Tk>
+								soft_selected={this.props.soft_selected}
+								snip_refs={this.state.snip_refs}
+								parsetree={this.state.parsetree}
+								onSnipHover={this.props.onSnipHover}
+								onSnipClick={this.props.onSnipClick}
+								wrap_snip={this.props.wrap_snip}
+								/>
+						</code>
+					</pre>
+				</section>
+			</div>
 		</section>
-	</section>
 }

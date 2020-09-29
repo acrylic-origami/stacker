@@ -332,7 +332,37 @@ export default class extends React.Component<TProps, TState> {
 						BindEdge: "Binding " + rarr + " Callsite",
 						RevBindEdge: "Binding " + rarr + " RHS",
 					};
-					return <section>
+					return <React.Fragment>
+						<section>
+							<header>
+								<h1>History</h1>
+							</header>
+							<ul className="ctx-list" id="history">
+								{
+									this.state.src && hljs_result
+									&& this.state.at_history.map((at_, i) => {
+											const [node_, el_] = at_;
+											const next = this.state.gr.get(node_);
+											if(next !== undefined) {
+												const at_sp = nk_span(next[0][0]);
+												return <CtxSnip<number | undefined, number>
+													onClick={this.historyClickHandler}
+													active={false}
+													click_key={i}
+													tabbable={false}
+													// onSnipClick={this.historyClickHandler}
+													name={el_.tag}
+													filename={this.state.filelist[parseInt(at_sp[0])]}
+													span={at_sp}
+													preview={this.mk_snip_preview<number>(hljs_result, at_sp, i)}
+													key={i}
+													wrap_snip={id}
+												/>;
+											}
+									}).reverse()
+								}
+							</ul>
+						</section>
 						<section id="edge_ctx_container">
 							<header>
 								<h1>{ el.tag }</h1>
@@ -373,37 +403,7 @@ export default class extends React.Component<TProps, TState> {
 								}
 							</ul>
 						</section>
-						<section>
-							<header>
-								<h1>History</h1>
-							</header>
-							<ul className="ctx-list" id="history">
-								{
-									this.state.src && hljs_result
-									&& this.state.at_history.map((at_, i) => {
-											const [node_, el_] = at_;
-											const next = this.state.gr.get(node_);
-											if(next !== undefined) {
-												const at_sp = nk_span(next[0][0]);
-												return <CtxSnip<number | undefined, number>
-													onClick={this.historyClickHandler}
-													active={false}
-													click_key={i}
-													tabbable={false}
-													// onSnipClick={this.historyClickHandler}
-													name={el_.tag}
-													filename={this.state.filelist[parseInt(at_sp[0])]}
-													span={at_sp}
-													preview={this.mk_snip_preview<number>(hljs_result, at_sp, i)}
-													key={i}
-													wrap_snip={id}
-												/>;
-											}
-									}).reverse()
-								}
-							</ul>
-						</section>
-					</section>
+					</React.Fragment>
 				}
 			})() }
 			<section id="next_nodes_container">
@@ -654,6 +654,17 @@ export default class extends React.Component<TProps, TState> {
 			onClick={this.cancel_mode}
 			id="main_root"
 			ref={this.main_root_ref}>
+			<nav id="main_nav">
+				<span id="logo_container">
+					<a href="#"><div id="logo"></div></a>
+				</span>
+				<ul id="file_tabs" className="flatlist">
+					{this.state.file_tabs.map((fname, i) =>
+						<li className={`file-tab ${fname === next_fname ? 'selected' : ''}`} key={fname}>
+							<a href="#" onClick={e => this.filetabClickHandler(e, fname) /* technically there's a race condition between setting the new state and a new render, wonder if this is worth worrying about. */}>{parsePath(fname).base}</a>
+						</li>)}
+				</ul>
+			</nav>
 			<MainContent<SpanMeta>
 				ctx_renderer={this.render_ctx_bar}
 				src={this.state.src}
@@ -663,15 +674,7 @@ export default class extends React.Component<TProps, TState> {
 				soft_selected={this.state.soft_selected}
 				wrap_snip={wrap_snip}
 				onSnipClick={this.snipClickHandler}
-			>
-				{ /* can't tell if this is more or less misleading putting headers as children */ }
-				<ul id="file_tabs" className="flatlist">
-					{this.state.file_tabs.map((fname, i) =>
-						<li className={`file-tab ${fname === next_fname ? 'selected' : ''}`} key={fname}>
-							<a href="#" onClick={e => this.filetabClickHandler(e, fname) /* technically there's a race condition between setting the new state and a new render, wonder if this is worth worrying about. */}>{parsePath(fname).base}</a>
-						</li>)}
-				</ul>
-			</MainContent>
+			/>
 		</div>;
 	}
 }
