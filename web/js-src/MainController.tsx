@@ -230,9 +230,14 @@ export default class extends React.Component<TProps, TState> {
 				const at = this.state.at_history.get(this.state.at_idx);
 				if(at !== undefined) {
 					const next = this.state.gr.get(at[0]);
+					const at_spks_raw = fw_edge2spks(at, this.state.gr);
+					const at_spks = {
+						ctxs: at_spks_raw.ctxs.sort((a, b) => `${a[0]}`.localeCompare(`${b[0]}`)),
+						nodes: at_spks_raw.nodes.sort((a, b) => `${a[0][0]}`.localeCompare(`${b[0][0]}`))
+					};
 					return {
 						scroll_to: next && nk_span(next[0][0]),
-						at_spks: fw_edge2spks(at, this.state.gr),
+						at_spks,
 						at_spks_idx: at_idx
 					};
 				}
@@ -320,6 +325,98 @@ export default class extends React.Component<TProps, TState> {
 	}
 	protected render_ctx_bar = (hljs_result: any): React.ReactNode =>
 		<React.Fragment>
+			<section id="next_nodes_container">
+				<div id="next_nodes_wrapper">
+					<header>
+						<h1>Next nodes</h1>
+					</header>
+					<ul id="next_nodes" className="ctx-list">
+						{
+							this.state.at_idx < this.state.at_history.size
+							&& this.state.src !== undefined
+							&& hljs_result !== undefined
+							&& (() => {
+								const at = this.state.at_history.get(this.state.at_idx);
+								if(
+									this.state.at_spks_idx === this.state.at_idx // => at_spks isn't stale
+									&& this.state.at_spks !== undefined
+									&& at !== undefined
+								) {
+									const [_n, el] = at;
+									const { nodes } = this.state.at_spks;
+									
+									const nodes_ = ((): Array<[string, MainSpanKey[]]> => {
+										switch(el.tag) {
+											case 'ArgEdge':
+												return nodes.map((spks): [string, MainSpanKey[]] => {
+													const [_sp, [_ty, [_n, el_]]] = spks[0];
+													assert(el_.tag === 'BindEdge' || el_.tag === 'RevBindEdge', `Unexpected ${el_.tag}`)
+													const names : Partial<Record<L.EdgeLabelTag, string>> = {
+														RevBindEdge: 'Callsite',
+														BindEdge: 'Binding RHS'
+													}
+													return [
+														el_.tag || '',
+														spks
+													];
+												});
+												break;
+											case 'AppEdge':
+											case 'BindEdge':
+											case 'RevBindEdge':
+												return nodes.map((spks): [string, MainSpanKey[]] => {
+													const [_sp, [_ty, [_n, el_]]] = spks[0];
+													assert(el_.tag === 'AppEdge' || el_.tag === 'ArgEdge', `Unexpected ${el_.tag}`)
+													const names : Partial<Record<L.EdgeLabelTag, string>> = {
+														AppEdge: 'Value Callsite',
+														ArgEdge: 'Arg Callsite'
+													}
+													return [
+														el_.tag || '',
+														spks
+													]
+												});
+												break;
+											default:
+												return [];
+										}
+									})();
+									return nodes_.map(([name, spks], i) => {
+										const [sp, [_ty, [n, el]]] = spks[0];
+										const active = any(sp_k =>
+												this.state.soft_selected !== undefined
+												&& any(soft_spk => jsoneq(soft_spk, sp_k), this.state.soft_selected)
+											, spks
+										);
+										const soft_active = any(sp_k => jsoneq(this.state.snip_active, sp_k), spks);
+										return <li className={
+											active || soft_active ? 'active' : ''
+										}>
+											{ i + 1 < 10 ? <kbd>{i + 1}</kbd> : undefined}
+											<CtxSnip<L.SpanKey<SpanMeta>[], MainSpanKey[]>
+												onClick={this.nextNodeClickHandler}
+												onDoubleClick={this.nextNodeDoubleClickHandler}
+												onBlur={this.nextNodeBlurHandler}
+												onFocus={this.nextNodeFocusHandler}
+												click_key={spks}
+												tabbable={true}
+												active={active}
+												// onSnipClick={this.snipClickHandler}
+												name={name}
+												filename={this.state.filelist[parseInt(sp[0])]}
+												span={sp}
+												key={`${sp.toString()}-${n}=${i}`}
+												preview={this.mk_snip_preview(hljs_result, sp, spks)}
+												wrap_snip={wrap_snip}
+											/>
+										</li>;
+									})
+								}
+							})()
+						}
+					</ul>
+				</div>
+			</section>
 			{ this.state.at_idx < this.state.at_history.size
 			&& (() => {
 				const at = this.state.at_history.get(this.state.at_idx);
@@ -333,39 +430,9 @@ export default class extends React.Component<TProps, TState> {
 						RevBindEdge: "Binding " + rarr + " RHS",
 					};
 					return <React.Fragment>
-						<section>
-							<header>
-								<h1>History</h1>
-							</header>
-							<ul className="ctx-list" id="history">
-								{
-									this.state.src && hljs_result
-									&& this.state.at_history.map((at_, i) => {
-											const [node_, el_] = at_;
-											const next = this.state.gr.get(node_);
-											if(next !== undefined) {
-												const at_sp = nk_span(next[0][0]);
-												return <CtxSnip<number | undefined, number>
-													onClick={this.historyClickHandler}
-													active={false}
-													click_key={i}
-													tabbable={false}
-													// onSnipClick={this.historyClickHandler}
-													name={el_.tag}
-													filename={this.state.filelist[parseInt(at_sp[0])]}
-													span={at_sp}
-													preview={this.mk_snip_preview<number>(hljs_result, at_sp, i)}
-													key={i}
-													wrap_snip={id}
-												/>;
-											}
-									}).reverse()
-								}
-							</ul>
-						</section>
 						<section id="edge_ctx_container">
 							<header>
-								<h1>{ el.tag }</h1>
+								<h1>This node</h1>
 								<h2>
 									{names[el.tag]}
 								</h2>
@@ -390,105 +457,58 @@ export default class extends React.Component<TProps, TState> {
 										}
 									})().map(([name, spty, sp]) => {
 										const spk: L.SpanKey<TSpanTyd<undefined>> = [sp, [spty, undefined]];
-										return <CtxSnip<L.SpanKey<TSpanTyd<undefined>>[]>
-											name={name}
-											filename={this.state.filelist[parseInt(sp[0])]}
-											span={sp}
-											tabbable={false}
-											preview={this.mk_snip_preview(hljs_result, sp, [spk])}
-											key={sp.toString()}
-											wrap_snip={wrap_snip}
-										/>;
+										return <li>
+											<CtxSnip<L.SpanKey<TSpanTyd<undefined>>[]>
+												name={name}
+												filename={this.state.filelist[parseInt(sp[0])]}
+												span={sp}
+												tabbable={false}
+												preview={this.mk_snip_preview(hljs_result, sp, [spk])}
+												key={sp.toString()}
+												wrap_snip={wrap_snip}
+											/>
+										</li>;
 									})
 								}
 							</ul>
 						</section>
+						<section id="history_container">
+							<div id="history_wrapper">
+								<header>
+									<h1>History</h1>
+								</header>
+								<ol className="ctx-list" id="history">
+									{
+										this.state.src && hljs_result
+										&& this.state.at_history.map((at_, i) => {
+												const [node_, el_] = at_;
+												const next = this.state.gr.get(node_);
+												if(next !== undefined) {
+													const at_sp = nk_span(next[0][0]);
+													return <li>
+														<CtxSnip<number | undefined, number>
+															onClick={this.historyClickHandler}
+															active={false}
+															click_key={i}
+															tabbable={false}
+															// onSnipClick={this.historyClickHandler}
+															name={el_.tag}
+															filename={this.state.filelist[parseInt(at_sp[0])]}
+															span={at_sp}
+															preview={this.mk_snip_preview<number>(hljs_result, at_sp, i)}
+															key={i}
+															wrap_snip={id}
+														/>
+													</li>
+												}
+										}).reverse()
+									}
+								</ol>
+							</div>
+						</section>
 					</React.Fragment>
 				}
 			})() }
-			<section id="next_nodes_container">
-				<ul id="next_nodes" className="ctx-list">
-					{
-						this.state.at_idx < this.state.at_history.size
-						&& this.state.src !== undefined
-						&& hljs_result !== undefined
-						&& (() => {
-							const at = this.state.at_history.get(this.state.at_idx);
-							if(
-								this.state.at_spks_idx === this.state.at_idx // => at_spks isn't stale
-								&& this.state.at_spks !== undefined
-								&& at !== undefined
-							) {
-								const [_n, el] = at;
-								const { nodes } = this.state.at_spks;
-								
-								const nodes_ = ((): Array<[string, MainSpanKey[]]> => {
-									switch(el.tag) {
-										case 'ArgEdge':
-											return nodes.map((spks): [string, MainSpanKey[]] => {
-												const [_sp, [_ty, [_n, el_]]] = spks[0];
-												assert(el_.tag === 'BindEdge' || el_.tag === 'RevBindEdge', `Unexpected ${el_.tag}`)
-												const names : Partial<Record<L.EdgeLabelTag, string>> = {
-													RevBindEdge: 'Callsite',
-													BindEdge: 'Binding RHS'
-												}
-												return [
-													names[el_.tag] || '',
-													spks
-												];
-											});
-											break;
-										case 'AppEdge':
-										case 'BindEdge':
-										case 'RevBindEdge':
-											return nodes.map((spks): [string, MainSpanKey[]] => {
-												const [_sp, [_ty, [_n, el_]]] = spks[0];
-												assert(el_.tag === 'AppEdge' || el_.tag === 'ArgEdge', `Unexpected ${el_.tag}`)
-												const names : Partial<Record<L.EdgeLabelTag, string>> = {
-													AppEdge: 'Value Callsite',
-													ArgEdge: 'Arg Callsite'
-												}
-												return [
-													names[el_.tag] || '',
-													spks
-												]
-											});
-											break;
-										default:
-											return [];
-									}
-								})();
-								return nodes_.map(([name, spks], i) => {
-									const [sp, [_ty, [n, el]]] = spks[0];
-									return <CtxSnip<L.SpanKey<SpanMeta>[], MainSpanKey[]>
-											onClick={this.nextNodeClickHandler}
-											onDoubleClick={this.nextNodeDoubleClickHandler}
-											onBlur={this.nextNodeBlurHandler}
-											onFocus={this.nextNodeFocusHandler}
-											click_key={spks}
-											tabbable={true}
-											active={
-												any(sp_k =>
-														this.state.soft_selected !== undefined
-														&& any(soft_spk => jsoneq(soft_spk, sp_k), this.state.soft_selected)
-													, spks
-												)
-											}
-											className={any(sp_k => jsoneq(this.state.snip_active, sp_k), spks) ? 'active' : ''}
-											// onSnipClick={this.snipClickHandler}
-											name={name}
-											filename={this.state.filelist[parseInt(sp[0])]}
-											span={sp}
-											key={`${sp.toString()}-${n}=${i}`}
-											preview={this.mk_snip_preview(hljs_result, sp, spks)}
-											wrap_snip={wrap_snip}
-										/>
-								})
-							}
-						})()
-					}
-				</ul>
-			</section>
 		</React.Fragment>
 	
 	////////////////////////////////////////////////////////////////////////
@@ -662,6 +682,7 @@ export default class extends React.Component<TProps, TState> {
 					{this.state.file_tabs.map((fname, i) =>
 						<li className={`file-tab ${fname === next_fname ? 'selected' : ''}`} key={fname}>
 							<a href="#" onClick={e => this.filetabClickHandler(e, fname) /* technically there's a race condition between setting the new state and a new render, wonder if this is worth worrying about. */}>{parsePath(fname).base}</a>
+							<a href="#"><i className="fas fa-times"></i></a>
 						</li>)}
 				</ul>
 			</nav>

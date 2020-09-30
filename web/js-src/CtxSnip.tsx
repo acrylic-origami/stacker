@@ -4,6 +4,7 @@ import * as L from './Lang'
 import { List } from 'immutable'
 import { SnipWrapper } from './MainController';
 import { TParseTree } from './parsetree'
+import parsePath from 'parse-filepath'
 
 const MAX_LINES = 4;
 
@@ -133,9 +134,15 @@ export default class<Tk = undefined, Tu = undefined> extends React.PureComponent
 	
 	render() {
 		const children = <React.Fragment>
-			<h3>{this.props.name}</h3>
-			<h4>{this.props.filename}</h4>
-			<h5>{ppr_loc(this.props.span[1])}&nbsp;&mdash;&nbsp;{ppr_loc(this.props.span[2])}</h5>
+			<h3 className="ctx-head">
+				<span className={`ctx-label ctx-label-${this.props.name.toLowerCase()}`}>
+					{this.props.name}
+				</span>
+				@&nbsp;&nbsp;
+				{parsePath(this.props.filename).base}&nbsp;&nbsp;
+				{ppr_loc(this.props.span[1])}&nbsp;&mdash;&nbsp;{ppr_loc(this.props.span[2])}
+			</h3>
+			<h4 className="ctx-head-fname">({this.props.filename})</h4>
 			<div className="src-container" ref={e => this.setState({ root_container_el: e || undefined })}>
 				<pre>
 					<code className="language-haskell hljs" onClick={this.codeClickHandler}>
@@ -165,9 +172,7 @@ export default class<Tk = undefined, Tu = undefined> extends React.PureComponent
 				</pre>
 			</div>
 		</React.Fragment>
-		return <li
-			className={`ctx-snip ${this.props.active ? 'active' : ''} ${this.props.className}`}>
-			{ this.props.tabbable
+		return this.props.tabbable
 				? <a href="#"
 						ref={this.aref}
 						onClick={this.clickHandler}
@@ -177,9 +182,7 @@ export default class<Tk = undefined, Tu = undefined> extends React.PureComponent
 						tabIndex={this.props.tabbable ? 0 : undefined}>
 						{children}
 					</a>
-				: children
-			}
-		</li>;
+				: children;
 		
 	}
 }

@@ -2,10 +2,16 @@ body, html {
 	margin:0;
 	width:100%;
 	height:100%;
-	font-family: monospace;
+	background-color:#666;
+	font-family: 'Source Sans Pro', sans-serif;
+	font-size:0.87em;
 }
 pre {
 	margin:0;
+}
+a {
+	color:inherit;
+	text-decoration:none;
 }
 a:focus {
 	box-shadow:0 0 0 3px #FF0;
@@ -18,7 +24,14 @@ a.unpointer {
 	cursor:auto;
 }
 
-ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
+kbd {
+	border:#CCC solid 1px;
+	box-shadow:#CCC 0 0.3em;
+	padding:0.25em;
+}
+
+
+ul.flatlist, ol.flatlist, ul.ctx-list {
 	list-style-type:none;
 	margin:0;
 	padding:0;
@@ -36,7 +49,7 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 	overflow:hidden;
 }
 .ctx-snip.active {
-	background-color:#F00;
+	background-color:rgba(255, 87, 22, 0.09);
 }
 
 #main_root {
@@ -56,8 +69,9 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 	}
 		#logo_container {
 			width:30em;
-			
-			background-color:#533f6c;
+			box-sizing:border-box;
+			padding:1em;
+			background-color:#453a54;
 		}
 			#logo {
 				width:100%;
@@ -65,10 +79,34 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 				background-image:url(../img/logo.png);
 				background-size:contain;
 				background-position:0 center;
+				background-repeat:no-repeat;
+			}
+		
+		#file_tabs {
+			flex-grow:1;
+			display:flex;
+			flex-direction:row;
+			align-items:stretch;
+			background-color:#362f40;
+			color:#9a8caa;
+		}
+			#file_tabs > li {
+				display:inline-flex;
+				flex-direction:row;
+				align-items:center;
+				
+				border-left:#3d324a solid 1px;
+				padding:0.5em;
+			}
+			#file_tabs > li.selected {
+				background-color:#534665;
+				color:#d0cbd7;
+			}
+			#file_tabs > li:first-child {
+				border-left:none;
 			}
 	
 	#main_content {
-		height:100%;
 		flex-shrink:0;
 		display:flex;
 		flex-direction:row;
@@ -83,7 +121,80 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 			align-items:stretch;
 			
 			width:30em;
+			
+			color:#B0B0B0;
+			border-right:#333 solid 1px;
 		}
+			#context_bar > section > header > h1 {
+				font-size:1.2em;
+				margin-top:0.2em;
+				margin-bottom:0.2em;
+			}
+			.ctx-head {
+				word-break:break-word;
+				font-weight:normal;
+				display:inline;
+			}	
+				.ctx-label {
+					padding:0.4em;
+					margin-right:0.5em;
+					font-size:0.7em;
+					
+					border-width:1px;
+					border-style:solid;
+				}
+					.ctx-label-appedge {
+						color:#ccd34e;
+						border-color:#ccd34e;
+					}
+					.ctx-label-bindedge {
+						color:#4fe493;
+						border-color:#4fe493;
+					}
+					.ctx-label-argedge {
+						color:#dd9149;
+						border-color:#dd9149;
+					}
+					.ctx-label-revbindedge {
+						color:#ca4ba1;
+						border-color:#ca4ba1;
+					}
+			.ctx-head-fname {
+				font-weight:normal;
+				color:#999;
+				font-size:0.9em;
+				margin:0.2em;
+			}
+			#history_container {
+				background-color:#515151;
+				border-top:#444 solid 1px;
+				max-height:40%;
+				min-height:10%;
+				flex-grow:1;
+				flex-shrink:1;
+			}
+				#history_wrapper, #next_nodes_wrapper {
+					position:absolute;
+				}
+					#history {
+						padding:0;
+						padding-left:1.8em;
+					}
+			#edge_ctx_container {
+				background-color:#484848;
+				border-top:#313131 solid 1px;
+			}
+			#next_nodes_container {
+				background-color:#3a3a3a;
+				flex-grow:1;
+			}
+			
+			#history_container, #next_nodes_container {
+				overflow:auto;
+				position:relative;
+			}
+			
+		
 		#src_root_container {
 			/*min-width:30em;*/
 			/*flex-grow:1;
@@ -96,6 +207,7 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 		}
 			#src_wrap_container {
 				position:absolute;
+				width:100%;
 			}
 				#src_root, code.hljs {
 					position:relative;
@@ -103,20 +215,18 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 					font-family: monospace;
 				}
 
-			.ctx-snip > h3, .ctx-snip > h4, .ctx-snip > h5 {
+			.ctx-snip h3, .ctx-snip h4, .ctx-snip h5 {
 				margin:0;
 				padding:0 0.4em;
-				font-size:1em;
 			}
 
 			#edge_ctx_container, #next_nodes_container {
 				white-space:nowrap;
-				overflow-y:scroll;
 				flex-shrink:0;
 			}
-				#edge_ctx_container > header > h1, #edge_ctx_container > header > h2 {
+				/*#edge_ctx_container > header > h1, #edge_ctx_container > header > h2 {
 					text-transform:uppercase;
-				}
+				}*/
 				#edge_ctx_container > header > h1 {
 					margin:0;
 					padding:0 0.4em;
@@ -131,37 +241,22 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 				/*#edge_ctx, #next_nodes, #history {
 					padding:0.6em;
 				}*/
-				#edge_ctx > li, #next_nodes > li, #history > li {
+				/*#edge_ctx > li, #next_nodes > li, #history > li {
 					padding:0.6em;
-				}
-
-			#scc_section {
+				}*/
 				
-			}
-				#scc_section h1 {
-					margin:0;
-					padding:0.4em;
-					font-size:1em;
+				span[class*='snip-2-'], span[class*='snip-3-'], span[class*='snip-4-'], span[class*='snip-5-'], span[class*='snip-6-'] {
+					box-shadow:rgba(0, 255, 0, 0.35) 0 1px 0;
 				}
-				#scc_select {
-					overflow-x:scroll;
-					list-style-type:none;
-					margin:0;
-					padding:0;
+				span[class*='snip-7-'] { /* , span[class*='snip-8-'] */
+					border:rgba(0, 255, 0, 0.35) solid 1px;
+					box-sizing:border-box;
 				}
-					#scc_select > li {
-						margin:0;
-						padding:1.2em;
-						display:inline-block;
-					}
-						#scc_select > li h2 {
-							
-						}
-				
-				span[class*='snip-2-'], span[class*='snip-3-'], span[class*='snip-4-'], span[class*='snip-5-'], span[class*='snip-6-'], span[class*='snip-7-'], span[class*='snip-8-'] {
-					box-shadow:rgba(0, 255, 0, 1.0) 0 1px 0;
+				span[class*='snip-0-'], span[class*='snip-1-'], span[class*='snip-2-'], span[class*='snip-3-'] {
+					border:none !important;
+					box-shadow:none !important;
 				}
-				span[class*='snip-0-']:hover, span[class*='snip-1-']:hover, span[class*='snip-2-']:hover, .snip.hoverable:hover, .snip.focused {
+				span[class*='snip-0-']:hover, span[class*='snip-1-']:hover, span[class*='snip-2-']:hover, span[class*='snip-3-']:hover, .snip.hoverable:hover, .snip.focused {
 					background-color:red;
 				}
 				
@@ -169,11 +264,11 @@ ul.flatlist, ol.flatlist, ul.ctx-list, ol.ctx-list {
 					background-color:rgba(0, 255, 0, 0.2);
 				}
 				.snip-0-2, .snip-1-2, .snip-2-2, .snip-3-2 {
-					background-color:rgba(0, 255, 0, 0.4);
+					background-color:rgba(0, 255, 0, 0.25);
 				}
 				.snip-0-3, .snip-1-3, .snip-2-3, .snip-3-3 {
-					background-color:rgba(0, 255, 0, 0.6);
+					background-color:rgba(0, 255, 0, 0.3);
 				}
 				.snip-0-4, .snip-1-4, .snip-2-4, .snip-3-4 {
-					background-color:rgba(0, 255, 0, 0.8);
+					background-color:rgba(0, 255, 0, 0.35);
 				}
