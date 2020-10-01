@@ -11,7 +11,7 @@ import { map_intersect, compare, any } from './Util'
 import { span_contains, candidate, spaneq, span_intersects } from './Lang'
 import * as L from './Lang'
 import * as U from './Util'
-import CodeBlock from './CodeBlock'
+import CodeBlock, { SnipEventHandler } from './CodeBlock'
 import { Set, Map } from 'immutable'
 import { MinHeap } from 'mnemonist'
 
@@ -21,17 +21,15 @@ hljs.registerLanguage('haskell', hs);
 
 // NOTE: keeping this props list  pure to only changing when the snips actually change visibly is VERY IMPORTANT TO PERFORMANCE.
 export type SnipClickHandler<Tk> = (e: React.SyntheticEvent, k: Array<L.SpanKey<Tk>>) => void;
-export interface PassthruProps<Tk> {
-	onSnipClick: SnipClickHandler<Tk>,
-}
 
-interface TProps<Tk> extends PassthruProps<Tk> {
+interface TProps<Tk> {
+	onSnipClick?: SnipEventHandler<L.SpanKey<Tk>>,
 	src?: L.Src,
 	span_ks: Array<L.SpanKey<Tk>>,
 	// should_scroll_to: (ks: Array<L.SpanKey<Tk>>) => boolean,
 	wrap_snip: SpanKeySnipWrapper<Tk>,
 	soft_selected?: Array<L.SpanKey<Tk>>,
-	onSnipHover: SnipHoverHandler<Tk>,
+	onSnipHover: SnipHoverHandler<L.SpanKey<Tk>>,
 	ctx_renderer: (hljs_result: any) => React.ReactNode,
 	scroll_to?: L.Span
 }
@@ -39,7 +37,7 @@ interface TProps<Tk> extends PassthruProps<Tk> {
 // type KeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>>> // outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the snippet location
 // NOTE: _all_ of these are props-driven, NONE OF THESE ARE EVENT-DRIVEN. This means that all the work this component does is _totally driven by props_.
 // export type TParseTree<Tk> = Array<[React.ReactNode, MaybeKeyedSubSnip<Tk>]>
-export type SnipHoverHandler<Tk> = (e: React.SyntheticEvent, sp_ks: Array<L.SpanKey<Tk>>) => void
+export type SnipHoverHandler<Tk> = (e: React.SyntheticEvent, sp_ks: Tk[]) => void
 interface TState<Tk> {
 	root_container_el?: HTMLElement,
 	parsetree?: ParseTree<Tk>,
@@ -208,13 +206,14 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 				<section id="src_wrap_container" className="src-container">
 					<pre>
 						<code id="src_root" className="language-haskell hljs">
-							<CodeBlock<Tk>
+							<CodeBlock<L.SpanKey<Tk>>
 								soft_selected={this.props.soft_selected}
 								snip_refs={this.state.snip_refs}
 								parsetree={this.state.parsetree}
 								onSnipHover={this.props.onSnipHover}
 								onSnipClick={this.props.onSnipClick}
 								wrap_snip={this.props.wrap_snip}
+								keycomp={(selected, target) => any(spk => any(soft_spk => U.jsoneq(soft_spk, spk), selected || []), target || [])}
 								/>
 						</code>
 					</pre>

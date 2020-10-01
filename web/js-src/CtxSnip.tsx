@@ -5,6 +5,7 @@ import { List } from 'immutable'
 import { SnipWrapper } from './MainController';
 import { TParseTree } from './parsetree'
 import parsePath from 'parse-filepath'
+import CodeBlock from './CodeBlock'
 
 const MAX_LINES = 4;
 
@@ -13,9 +14,9 @@ function ppr_loc(loc: L.Loc): string {
 }
 
 // okay, the main problem is that this is now obsolete and thus hard to motivate: Tk used to be used for snip clicks, but we don't allow that anymore. The only reason we still have it is for snip wrapping, but that expects all of the keys to be packaged with a span, whereas mk_preview in MainController tries to be general and instead unions the undefined in the top-most level, allowing us to pass it that way.
-interface TProps<Tk, Tu> {
-	onSnipClick?: (e: React.SyntheticEvent, k: Tk | undefined) => void,
-	preview: TParseTree<Tk | undefined>,
+interface TProps<Tk, Tu> { // NOTE: Tk, only used to come in contravariant positions: this means this is a Tk hole (obviously, we aren't assuming to get anything out of snip clicks implicitly -- will need to zip `Preview`)
+	onSnipClick?: (e: React.SyntheticEvent, k: Tk[]) => void,
+	preview: TParseTree<Tk[]>,
 	onDoubleClick?: (e: Event, u: Tu) => void,
 	onClick?: (e: Event, u: Tu) => void,
 	onFocus?: (e: Event, u: Tu) => void,
@@ -23,7 +24,7 @@ interface TProps<Tk, Tu> {
 	click_key?: Tu,
 	active: boolean,
 	className?: string,
-	wrap_snip: SnipWrapper<Tk>,
+	wrap_snip: SnipWrapper<Tk[]>,
 	span: L.Span,
 	name: string,
 	filename: string,
@@ -124,10 +125,9 @@ export default class<Tk = undefined, Tu = undefined> extends React.PureComponent
 			this.props.onDoubleClick(e_, this.props.click_key);
 		}
 	}
-	protected snipClickHandler = (e: React.SyntheticEvent, k: Array<Tk | undefined>) => {
-		const k_ = k[0];
-		if(k_ !== undefined && this.props.onSnipClick !== undefined) {
-			this.props.onSnipClick(e, k_);
+	protected snipClickHandler = (e: React.SyntheticEvent, ks: Tk[]) => {
+		if(ks !== undefined && this.props.onSnipClick !== undefined) {
+			this.props.onSnipClick(e, ks);
 		}
 	}
 	protected codeClickHandler = (e: React.SyntheticEvent) => e.stopPropagation()
@@ -144,32 +144,19 @@ export default class<Tk = undefined, Tu = undefined> extends React.PureComponent
 			</h3>
 			<h4 className="ctx-head-fname">({this.props.filename})</h4>
 			<div className="src-container" ref={e => this.setState({ root_container_el: e || undefined })}>
-				<pre>
-					<code className="language-haskell hljs" onClick={this.codeClickHandler}>
-						&hellip;{this.props.preview.map(([txt, [isp, sp_ks]]) =>
-							sp_ks === undefined
-								? <span key={isp.toString()}>{txt}</span>
-								: <Snip<undefined>
-										// onClick={this.snipClickHandler}
-										// onMouseLeave={this.snipHoverHandler}
-										// onMouseEnter={this.snipHoverHandler}
-										ks={[undefined]} // used to be an sp_ks for selection, but now it's obsolete since we don't click on these to move forward
-										key={isp.toString()}
-										root={this.state.root_container_el}
-										className={
-											(this.state.snip_hovered
-												? 'focused'
-												: '')
-											+ (sp_ks === undefined
-												? 'unpointer'
-												: '')
-										}
-									>
-									{this.props.wrap_snip(txt, sp_ks)}
-								</Snip>
-						)}&hellip;
-					</code>
-				</pre>
+				<section className="src-container">
+					<pre>
+						<code id="src_root" className="language-haskell hljs">
+							&hellip;
+							<CodeBlock<Tk>
+								parsetree={this.props.preview}
+								wrap_snip={this.props.wrap_snip}
+								keycomp={(a, b) => false}
+							/>
+							&hellip;
+						</code>
+					</pre>
+				</section>
 			</div>
 		</React.Fragment>
 		return this.props.tabbable

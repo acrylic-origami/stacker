@@ -4,8 +4,8 @@ import * as L from './Lang'
 import * as U from './Util'
 
 export type MaybeKeyedSubSnip<Tk> = L.ISpanKey<Array<L.SpanKey<Tk>> | undefined>
-export type TParseTree<Tk> = Array<[React.ReactNode, L.ISpanKey<Tk>]>
-export type ParseTree<Tk> = TParseTree<Array<L.SpanKey<Tk>> | undefined> // the most common ParseTree, with outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the overlapping snippet location
+export type TParseTree<Tk> = Array<[React.ReactNode, L.ISpanKey<Tk | undefined>]>
+export type ParseTree<Tk> = TParseTree<Array<L.SpanKey<Tk>>> // the most common ParseTree, with outer span for the sub-snippet location (mostly to supply unique React keys), inner span for the overlapping snippet location
 
 type SpanChar<Tk> = U.DictDbl<L.ISpan, L.SpanKey<Tk>>;
 export function mk_span_chars<Tk>(body_lines: string[], span_ks: Array<L.SpanKey<Tk>>): Array<SpanChar<Tk>> {

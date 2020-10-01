@@ -307,7 +307,7 @@ export default class extends React.Component<TProps, TState> {
 		const src = this.state.src;
 		if(src !== undefined) {
 			const [isp] = mk_span_chars(src.body.lines, [[sp, k]]);
-			const subt = slice_parsetree(hljs_result.emitter.root, [isp.key[0] - 50, isp.key[1] + 50]);
+			const subt = slice_parsetree(hljs_result.emitter.root, [isp.key[0] - 50, Math.min(isp.key[1] + 50, isp.key[0] + 130)]);
 			if(subt !== undefined) {
 				const left = Math.min(isp.key[0], 50);
 				const right = left + (isp.key[1] - isp.key[0]);
@@ -393,7 +393,7 @@ export default class extends React.Component<TProps, TState> {
 											active || soft_active ? 'active' : ''
 										}>
 											{ i + 1 < 10 ? <kbd>{i + 1}</kbd> : undefined}
-											<CtxSnip<L.SpanKey<SpanMeta>[], MainSpanKey[]>
+											<CtxSnip<L.SpanKey<SpanMeta>, MainSpanKey[]>
 												onClick={this.nextNodeClickHandler}
 												onDoubleClick={this.nextNodeDoubleClickHandler}
 												onBlur={this.nextNodeBlurHandler}
@@ -458,7 +458,7 @@ export default class extends React.Component<TProps, TState> {
 									})().map(([name, spty, sp]) => {
 										const spk: L.SpanKey<TSpanTyd<undefined>> = [sp, [spty, undefined]];
 										return <li>
-											<CtxSnip<L.SpanKey<TSpanTyd<undefined>>[]>
+											<CtxSnip<L.SpanKey<TSpanTyd<undefined>>>
 												name={name}
 												filename={this.state.filelist[parseInt(sp[0])]}
 												span={sp}
@@ -495,7 +495,7 @@ export default class extends React.Component<TProps, TState> {
 															name={el_.tag}
 															filename={this.state.filelist[parseInt(at_sp[0])]}
 															span={at_sp}
-															preview={this.mk_snip_preview<number>(hljs_result, at_sp, i)}
+															preview={this.mk_snip_preview<number[]>(hljs_result, at_sp, [i])}
 															key={i}
 															wrap_snip={id}
 														/>
