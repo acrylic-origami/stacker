@@ -9,6 +9,7 @@ import { NUM_SNIP_DEPTH_COLORS } from './const'
 import { mk_span_chars, slice_parsetree, mk_parsetree, TParseTree, ParseTree, MaybeKeyedSubSnip } from './parsetree'
 import SnipItem from './SnipItem'
 import CodeBlock from './CodeBlock'
+import EventCounter from './EventCounter'
 import keycode from './keycode'
 import parsePath from 'parse-filepath'
 
@@ -362,62 +363,68 @@ export default class extends React.Component<TProps, TState> {
 	}
 	protected render_ctx_bar = (hljs_result: any): React.ReactNode =>
 		<React.Fragment>
-			<section id="next_nodes_container">
-				<div id="next_nodes_wrapper">
-					<header>
-						<h1>Next nodes</h1>
-					</header>
-					<ul id="next_nodes" className="ctx-list">
-						{
-							this.state.at_idx < this.state.at_history.size
-							&& this.state.src !== undefined
-							&& hljs_result !== undefined
-							&& (() => {
-								const at = this.state.at_history.get(this.state.at_idx);
-								if(
-									this.state.at_spks_idx === this.state.at_idx // => at_spks isn't stale
-									&& this.state.at_spks !== undefined
-									&& at !== undefined
-								) {
-									const [_n, el] = at;
-									const { nodes } = this.state.at_spks;
-									
-									return nodes.map((spks, i) => {
-										const active = any(sp_k =>
-												this.state.soft_selected !== undefined
-												&& any(soft_spk => jsoneq(soft_spk, sp_k), this.state.soft_selected)
-											, spks
-										);
-										const soft_active = any(sp_k => jsoneq(this.state.snip_active, sp_k), spks);
-										return <li className={
-											active || soft_active ? 'active' : ''
-										}>
-											{ i + 1 < 10 ? <kbd>{i + 1}</kbd> : undefined}
-											<SnipItem<L.SpanKey<SpanMeta>, MainSpanKey[]>
-												onClick={this.nextNodeClickHandler}
-												onDoubleClick={this.nextNodeDoubleClickHandler}
-												onBlur={this.nextNodeBlurHandler}
-												onFocus={this.nextNodeFocusHandler}
-												click_key={spks}
-												tabbable={true}
-												active={active}
-												// onSnipClick={this.snipClickHandler}
-												key={`${JSON.stringify(spks)}` /* LOWPRI TODO come up with a better unique */}
-												mk_children={show => this.spks2snips(
-														spks.map((spk, i) =>
-															[L.EDGELABEL2NAME[spk[1][1][1].tag][i] || '', spk]
-														),
-														hljs_result,
-														show
-													) } />
-										</li>;
-									})
-								}
-							})()
-						}
-					</ul>
-				</div>
-			</section>
+			<EventCounter renderer={(onShowToggleClick, num_show_toggles) => 
+				<section id="next_nodes_container">
+					<div id="next_nodes_wrapper">
+						<header>
+							<span className="show-all-toggle-wrapper" onClick={onShowToggleClick}>
+								{!!(num_show_toggles & 1) ? 'Hide ' : 'Show '} all snippets <i className={`fas fa-caret-${!!(num_show_toggles & 1) ? 'down' : 'left'}`}></i>
+							</span>
+							<h1>Next nodes</h1>
+						</header>
+						<ul id="next_nodes" className="ctx-list">
+							{
+								this.state.at_idx < this.state.at_history.size
+								&& this.state.src !== undefined
+								&& hljs_result !== undefined
+								&& (() => {
+									const at = this.state.at_history.get(this.state.at_idx);
+									if(
+										this.state.at_spks_idx === this.state.at_idx // => at_spks isn't stale
+										&& this.state.at_spks !== undefined
+										&& at !== undefined
+									) {
+										const [_n, el] = at;
+										const { nodes } = this.state.at_spks;
+										
+										return nodes.map((spks, i) => {
+											const active = any(sp_k =>
+													this.state.soft_selected !== undefined
+													&& any(soft_spk => jsoneq(soft_spk, sp_k), this.state.soft_selected)
+												, spks
+											);
+											const soft_active = any(sp_k => jsoneq(this.state.snip_active, sp_k), spks);
+											return <li className={
+												active || soft_active ? 'active' : ''
+											}>
+												{ i + 1 < 10 ? <kbd>{i + 1}</kbd> : undefined}
+												<SnipItem<L.SpanKey<SpanMeta>, MainSpanKey[]>
+													onClick={this.nextNodeClickHandler}
+													onDoubleClick={this.nextNodeDoubleClickHandler}
+													onBlur={this.nextNodeBlurHandler}
+													onFocus={this.nextNodeFocusHandler}
+													click_key={spks}
+													tabbable={true}
+													active={active}
+													force_show_preview={num_show_toggles}
+													// onSnipClick={this.snipClickHandler}
+													key={`${JSON.stringify(spks)}` /* LOWPRI TODO come up with a better unique */}
+													mk_children={show => this.spks2snips(
+															spks.map((spk, i) =>
+																[L.EDGELABEL2NAME[spk[1][1][1].tag][i] || '', spk]
+															),
+															hljs_result,
+															show
+														) } />
+											</li>;
+										})
+									}
+								})()
+							}
+						</ul>
+					</div>
+				</section>
+			} />
 			{ this.state.at_idx < this.state.at_history.size
 			&& (() => {
 				const at = this.state.at_history.get(this.state.at_idx);
@@ -433,77 +440,89 @@ export default class extends React.Component<TProps, TState> {
 							RevBindEdge: "Binding " + rarr + " RHS",
 						};
 						return <React.Fragment>
-							<section id="edge_ctx_container">
-								<header>
-									<h1>This node</h1>
-									<h2>
-										{ L.NK2NAME[next[0][0].tag] }
-									</h2>
-								</header>
-								<ul id="edge_ctx" className="ctx-list">
-									{
-										this.state.src !== undefined && hljs_result !== undefined
-										&& (() => {
-											const spks = ((): Array<[string, MainSpanKey]> => {
-												switch(el.tag) {
-													case 'ArgEdge':
-														return el.contents.map((sp, i): [string, MainSpanKey] => [['Use site', 'Bindsite'][i], [sp, [[SPANTY.AG_TO_ARG, SPANTY.ARG][i], at]]]);
-														break;
-													case 'AppEdge':
-														return el.contents.map((sp, i): [string, MainSpanKey] => [['Callsite', 'Bindsite'][i], [sp, [[SPANTY.AG_TO_BIND, SPANTY.BIND_FROM_AG][i], at]]]);
-														break;
-													case 'BindEdge':
-														return [['Bindsite', [el.contents, [SPANTY.BIND_CALLSITE, at]]]];
-														break;
-													case 'RevBindEdge':
-														return [['Callsite', [el.contents, [SPANTY.BIND_MATCHSITE, at]]]];
-														break;
-												}
-											})();
-											return <li>
-												<SnipItem<L.SpanKey<TSpanTyd<undefined>>>
-													tabbable={false}
-													key={`${JSON.stringify(spks)}` /* LOWPRI TODO come up with a better unique */}
-													mk_children={show => this.spks2snips(spks, hljs_result, show) } />
-											</li>;
-										})()
-									}
-								</ul>
-							</section>
-							<section id="history_container">
-								<div id="history_wrapper">
+							<EventCounter renderer={(onShowToggleClick, num_show_toggles) => 
+								<section id="edge_ctx_container">
 									<header>
-										<h1>History</h1>
+										<span className="show-all-toggle-wrapper" onClick={onShowToggleClick}>
+											{!!(num_show_toggles & 1) ? 'Hide ' : 'Show '} all snippets <i className={`fas fa-caret-${!!(num_show_toggles & 1) ? 'down' : 'left'}`}></i>
+										</span>
+										<h1>This node</h1>
+										<h2>
+											{ L.NK2NAME[next[0][0].tag] }
+										</h2>
 									</header>
-									<ol className="ctx-list" id="history">
+									<ul id="edge_ctx" className="ctx-list">
 										{
-											this.state.src && hljs_result
-											&& this.state.at_history.map((at_, i) => {
-													const [node_, el_] = at_; // TODO MainSpanKey lacks NodeKey which is a little too bad. I'll really have to firm up that type since I use it as the main key type everywhere.
-													const next_ = this.state.gr.get(node_);
-													if(next_ !== undefined) {
-														const at_sp = nk_span(next_[0][0]);
-														const next_nk_ = next_[0][0].tag;
-														return <li>
-															<SnipItem<number | undefined, number>
-																onClick={this.historyClickHandler}
-																active={false}
-																click_key={i}
-																tabbable={false}
-																// onSnipClick={this.historyClickHandler}
-																key={i}
-																mk_children={show => this.spks2snips(
-																	[[L.NK2NAME[next_nk_], [at_sp, [L.NK2ENV[next_nk_], [node_, el_]]]]], // artificially construct span_key. Muddies semantics a bit... in this case, I want it purely for presentation. especially that it's a singleton list. Eugh. TODO make this better.
-																	hljs_result,
-																	show
-																) } />
-														</li>
+											this.state.src !== undefined && hljs_result !== undefined
+											&& (() => {
+												const spks = ((): Array<[string, MainSpanKey]> => {
+													switch(el.tag) {
+														case 'ArgEdge':
+															return el.contents.map((sp, i): [string, MainSpanKey] => [['Use site', 'Bindsite'][i], [sp, [[SPANTY.AG_TO_ARG, SPANTY.ARG][i], at]]]);
+															break;
+														case 'AppEdge':
+															return el.contents.map((sp, i): [string, MainSpanKey] => [['Callsite', 'Bindsite'][i], [sp, [[SPANTY.AG_TO_BIND, SPANTY.BIND_FROM_AG][i], at]]]);
+															break;
+														case 'BindEdge':
+															return [['Bindsite', [el.contents, [SPANTY.BIND_CALLSITE, at]]]];
+															break;
+														case 'RevBindEdge':
+															return [['Callsite', [el.contents, [SPANTY.BIND_MATCHSITE, at]]]];
+															break;
 													}
-											}).reverse()
+												})();
+												return <li>
+													<SnipItem<L.SpanKey<TSpanTyd<undefined>>>
+														tabbable={false}
+														key={`${JSON.stringify(spks)}` /* LOWPRI TODO come up with a better unique */}
+														force_show_preview={num_show_toggles}
+														mk_children={show => this.spks2snips(spks, hljs_result, show) } />
+												</li>;
+											})()
 										}
-									</ol>
-								</div>
-							</section>
+									</ul>
+								</section>
+							} />
+							<EventCounter renderer={(onShowToggleClick, num_show_toggles) => 
+								<section id="history_container">
+									<div id="history_wrapper">
+										<header>
+											<span className="show-all-toggle-wrapper" onClick={onShowToggleClick}>
+												{!!(num_show_toggles & 1) ? 'Hide ' : 'Show '} all snippets <i className={`fas fa-caret-${!!(num_show_toggles & 1) ? 'down' : 'left'}`}></i>
+											</span>
+											<h1>History</h1>
+										</header>
+										<ol className="ctx-list" id="history">
+											{
+												this.state.src && hljs_result
+												&& this.state.at_history.map((at_, i) => {
+														const [node_, el_] = at_; // TODO MainSpanKey lacks NodeKey which is a little too bad. I'll really have to firm up that type since I use it as the main key type everywhere.
+														const next_ = this.state.gr.get(node_);
+														if(next_ !== undefined) {
+															const at_sp = nk_span(next_[0][0]);
+															const next_nk_ = next_[0][0].tag;
+															return <li>
+																<SnipItem<number | undefined, number>
+																	onClick={this.historyClickHandler}
+																	active={false}
+																	click_key={i}
+																	tabbable={false}
+																	// onSnipClick={this.historyClickHandler}
+																	key={i}
+																	force_show_preview={num_show_toggles}
+																	mk_children={show => this.spks2snips(
+																		[[L.NK2NAME[next_nk_], [at_sp, [L.NK2ENV[next_nk_], [node_, el_]]]]], // artificially construct span_key. Muddies semantics a bit... in this case, I want it purely for presentation. especially that it's a singleton list. Eugh. TODO make this better.
+																		hljs_result,
+																		show
+																	) } />
+															</li>
+														}
+												}).reverse()
+											}
+										</ol>
+									</div>
+								</section>
+							} />
 						</React.Fragment>
 					}
 				}
@@ -658,7 +677,15 @@ export default class extends React.Component<TProps, TState> {
 				break;
 			case 'Z':
 			case 'z':
-				if(e.ctrlKey) {
+				if(e.ctrlKey || e.metaKey) {
+					switch(e.shiftKey) {
+						case true:
+							this.setState(({ at_idx, at_history }) => ({ at_idx: Math.min(at_history.size - 1, at_idx + 1) }));
+							break;
+						case false:
+							this.setState(({ at_idx, at_history }) => ({ at_idx: Math.max(0, at_idx - 1) }));
+							break;
+					}
 				}
 				else {
 					// force scroll

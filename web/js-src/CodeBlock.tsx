@@ -52,7 +52,7 @@ export default class<Tk> extends React.PureComponent<TProps<Tk>, {}> {
 			return null;
 		else {
 			const init: TReducerState = [List(), 0];
-			return <span>{this.props.parsetree.reduce(this.reducer, init)}</span>;
+			return <span>{this.props.parsetree.reduce(this.reducer, init)[0]}</span>;
 		}
 	}
 }
