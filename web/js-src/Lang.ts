@@ -53,6 +53,17 @@ export const NK2ENV: Record<NodeKeyTag, SPANTY> = {
 	NKApp: SPANTY.APPGROUP_ENV
 }
 
+export const NK2NAME: Record<NodeKeyTag, string> = {
+	NKApp: 'Application',
+	NKBind: 'Binding',
+}
+export const EDGELABEL2NAME: Record<EdgeLabelTag, string[]> = {
+	RevBindEdge: ['Binding', 'Callsite'],
+	BindEdge: ['Binding', 'Binding RHS'],
+	AppEdge: ['Value Callsite', 'Binding'],
+	ArgEdge: ['Arg Callsite', 'Arg'],
+}
+
 export type KTree =
 	string
 	| {

@@ -3,13 +3,13 @@ import { SnipWrapper, SpanKeySnipWrapper } from './MainController'
 import { SnipClickHandler, SnipHoverHandler } from './MainContent'
 import { TParseTree, ParseTree, MaybeKeyedSubSnip } from './parsetree'
 import { List } from 'immutable'
-import { jsoneq, any } from './Util'
+import { any } from './Util'
 import * as L from './Lang'
 import Snip from './Snip'
 
 export type SnipEventHandler<Tk> = (e: React.SyntheticEvent, k: Array<Tk>) => void;
 
-interface TProps<Tk> {
+export interface TProps<Tk> {
 	onSnipClick?: SnipEventHandler<Tk>,
 	parsetree?: TParseTree<Tk[]>,
 	snip_refs?: Array<React.RefObject<HTMLAnchorElement>>,

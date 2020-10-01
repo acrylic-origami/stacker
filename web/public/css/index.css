@@ -38,19 +38,29 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 }
 	ul.flatlist > li, ol.flatlist > li {
 		margin:0;
-		padding:0;
 		display:inline-block;
 	}
-	
-.src-container {
-	position:relative;
-}
+
 .ctx-snip .hljs {
 	overflow:hidden;
 }
 .ctx-snip.active {
 	background-color:rgba(255, 87, 22, 0.09);
 }
+
+
+.src-wrapper {
+	/*min-width:30em;*/
+	/*flex-grow:1;
+	display:flex;
+	flex-direction:column;
+	align-content:stretch;*/
+	overflow:scroll;
+	position:relative;
+}
+	.src-container {
+		position:absolute;
+	}
 
 #main_root {
 	display:flex;
@@ -80,6 +90,7 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 				background-size:contain;
 				background-position:0 center;
 				background-repeat:no-repeat;
+				cursor:pointer;
 			}
 		
 		#file_tabs {
@@ -90,22 +101,33 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 			background-color:#362f40;
 			color:#9a8caa;
 		}
-			#file_tabs > li {
-				display:inline-flex;
+			.filetab {
+				display:inline-flex !important;
 				flex-direction:row;
 				align-items:center;
+				padding:0.9em;
 				
 				border-left:#3d324a solid 1px;
 				padding:0.5em;
+				cursor:pointer;
 			}
-			#file_tabs > li.selected {
+			.filetab.selected {
 				background-color:#534665;
 				color:#d0cbd7;
 			}
-			#file_tabs > li:first-child {
+			.filetab:first-child {
 				border-left:none;
 			}
-	
+				.filetab > .close {
+					cursor:pointer;
+					padding:0.4em;
+					margin:0 0.5em;
+					font-size:0.8em;
+				}
+				.filetab > .close:hover {
+					background-color:rgba(0, 0, 0, 0.1);
+				}
+				
 	#main_content {
 		flex-shrink:0;
 		display:flex;
@@ -143,19 +165,19 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 					border-width:1px;
 					border-style:solid;
 				}
-					.ctx-label-appedge {
+					.ctx-label-0 {
 						color:#ccd34e;
 						border-color:#ccd34e;
 					}
-					.ctx-label-bindedge {
+					.ctx-label-1 {
 						color:#4fe493;
 						border-color:#4fe493;
 					}
-					.ctx-label-argedge {
+					.ctx-label-2 {
 						color:#dd9149;
 						border-color:#dd9149;
 					}
-					.ctx-label-revbindedge {
+					.ctx-label-3 {
 						color:#ca4ba1;
 						border-color:#ca4ba1;
 					}
@@ -164,6 +186,9 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 				color:#999;
 				font-size:0.9em;
 				margin:0.2em;
+			}
+			.show-preview-toggle {
+				float:right;
 			}
 			#history_container {
 				background-color:#515151;
@@ -196,24 +221,11 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 			
 		
 		#src_root_container {
-			/*min-width:30em;*/
-			/*flex-grow:1;
-			display:flex;
-			flex-direction:column;
-			align-content:stretch;*/
-			overflow:scroll;
 			flex-grow:1;
-			position:relative;
 		}
-			#src_wrap_container {
-				position:absolute;
+			#src_root_container > .src-container {
 				width:100%;
 			}
-				#src_root, code.hljs {
-					position:relative;
-					display:block;
-					font-family: monospace;
-				}
 
 			.ctx-snip h3, .ctx-snip h4, .ctx-snip h5 {
 				margin:0;

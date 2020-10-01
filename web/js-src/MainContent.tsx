@@ -11,7 +11,8 @@ import { map_intersect, compare, any } from './Util'
 import { span_contains, candidate, spaneq, span_intersects } from './Lang'
 import * as L from './Lang'
 import * as U from './Util'
-import CodeBlock, { SnipEventHandler } from './CodeBlock'
+import { SnipEventHandler } from './CodeBlock'
+import ScrollableCodeBlock from './ScrollableCodeBlock'
 import { Set, Map } from 'immutable'
 import { MinHeap } from 'mnemonist'
 
@@ -75,35 +76,6 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 		}
 		// if(diff.src || diff.span_ks) {
 		// think a bit further on this diff condition: is this the only time we should check if we should scroll given all the races and dependencies that might force a re-scroll?
-		if(diff.parsetree || diff.scroll_to) {
-			const scroll_to = this.props.scroll_to;
-			if(this.state.parsetree !== undefined && scroll_to !== undefined) {
-				let i = 0;
-				for(const [_n, [_isp, m_spk]] of this.state.parsetree) {
-					// console.log(JSON.stringify(scroll_to), JSON.stringify(_isp), JSON.stringify(m_spk));
-					if(m_spk !== undefined) {
-						if(any(([sp, k]) => span_intersects(scroll_to, sp), m_spk)) {
-							const ref = this.state.snip_refs[i];
-							const root = this.state.root_container_el;
-							if(ref !== undefined && ref.current !== null && root !== undefined) {
-								const offset = offsetTo(ref.current, root);
-								if(offset !== undefined) {
-									// offset can be undefined in between renders
-									const box = root.getBoundingClientRect();
-									root.scroll({
-										left: offset[0] - box.width / 2,
-										top: offset[1] - box.height / 2,
-										behavior: 'smooth'
-									});
-								}
-							}
-							break;
-						}
-						i++;
-					}
-				}
-			}
-		}
 		// requestAnimationFrame(e => {
 		// 	hljs.highlightBlock(this.src_ref.current);
 		// 	// const a = hljs.highlight('haskell', 'module A where')
@@ -202,22 +174,17 @@ export default class<Tk> extends React.Component<TProps<Tk>, TState<Tk>> {
 			<section id="context_bar">
 				{this.props.ctx_renderer(this.state.hljs_result)}
 			</section>
-			<div id="src_root_container" ref={this.rootRefChangeHandler}>
-				<section id="src_wrap_container" className="src-container">
-					<pre>
-						<code id="src_root" className="language-haskell hljs">
-							<CodeBlock<L.SpanKey<Tk>>
-								soft_selected={this.props.soft_selected}
-								snip_refs={this.state.snip_refs}
-								parsetree={this.state.parsetree}
-								onSnipHover={this.props.onSnipHover}
-								onSnipClick={this.props.onSnipClick}
-								wrap_snip={this.props.wrap_snip}
-								keycomp={(selected, target) => any(spk => any(soft_spk => U.jsoneq(soft_spk, spk), selected || []), target || [])}
-								/>
-						</code>
-					</pre>
-				</section>
-			</div>
+			<ScrollableCodeBlock<L.Span, L.SpanKey<Tk>>
+				soft_selected={this.props.soft_selected}
+				snip_refs={this.state.snip_refs}
+				id="src_root_container"
+				parsetree={this.state.parsetree}
+				onSnipHover={this.props.onSnipHover}
+				onSnipClick={this.props.onSnipClick}
+				wrap_snip={this.props.wrap_snip}
+				scroll_to={this.props.scroll_to}
+				scroll_key_comp={(scroll_to, spks) => any(([sp, k]) => span_intersects(scroll_to, sp), spks)}
+				keycomp={(selected, target) => any(spk => any(soft_spk => U.jsoneq(soft_spk, spk), selected || []), target || [])}
+				/>
 		</section>
 }
