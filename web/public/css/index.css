@@ -83,13 +83,24 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 		#logo_container {
 			width:30em;
 			box-sizing:border-box;
-			padding:1em;
+			padding:0.87em;
 			background-color:#453a54;
 		}
-			#logo {
-				width:100%;
+			#github {
+				width:1.5em;
 				height:100%;
-				background-image:url(../img/logo.png);
+				background-image:url(../img/GitHub-Mark-Light-32px.png);
+				background-size:contain;
+				background-position:0 center;
+				background-repeat:no-repeat;
+				float:right;
+				display:inline-block;
+			}
+	
+			#logo {
+				width:50%;
+				height:100%;
+				background-image:url(../img/logo-bright.png);
 				background-size:contain;
 				background-position:0 center;
 				background-repeat:no-repeat;
@@ -209,7 +220,7 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 				background-color:rgba(0, 0, 0, 0.2);
 			}
 			#history_container {
-				background-color:#515151;
+				background-color:#363636;
 				border-top:#444 solid 1px;
 				max-height:40%;
 				min-height:10%;
@@ -218,19 +229,44 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 			}
 				#history_wrapper, #next_nodes_wrapper {
 					position:absolute;
+					width:100%;
+					padding:0 1em;
+					box-sizing:border-box;
 				}
 					#history {
 						padding:0;
 						padding-left:1.8em;
 					}
 			#edge_ctx_container {
-				background-color:#484848;
+				background-color:#2d2d2d;
 				border-top:#313131 solid 1px;
+				padding:1em;
+				box-sizing:border-box;
 			}
+				
+				#edge_ctx_container > header {
+					margin-bottom:1em;
+				}
 			#next_nodes_container {
-				background-color:#3a3a3a;
+				background-color:#232323;
 				flex-grow:1;
 			}
+				#next_nodes_wrapper {
+					width:100%;
+					padding:0 1em;
+					box-sizing:border-box;
+				}
+				.next-node-item {
+					display:flex;
+					align-items:center;
+					margin:1em 0;
+				}
+					.next-item-keycode {
+						margin-right:1em;
+					}
+					.next-node-item .snip-item {
+						flex-grow:1;
+					}
 			
 			#history_container, #next_nodes_container {
 				overflow:auto;
@@ -265,7 +301,7 @@ ul.flatlist, ol.flatlist, ul.ctx-list {
 				#edge_ctx_container > header > h2 {
 					margin:0;
 					padding:0 0.4em;
-					font-size:0.7em;
+					font-size:1em;
 				}
 				
 				/*#edge_ctx, #next_nodes, #history {

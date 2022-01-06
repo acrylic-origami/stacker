@@ -13,16 +13,14 @@ import EventCounter from './EventCounter'
 import keycode from './keycode'
 import parsePath from 'parse-filepath'
 
-type TSpanTyd<T> = [ SPANTY, T ]
-type SpanMeta = TSpanTyd<L.FwEdge>
 // !!!!!!!!!!!!!!
 // NOTE!!! MainSpanKey must remain serializable and unique. MainSpanKey is the main key that is used to identify things, and identification uses JSON equality for flexibility. Later we'll dedicate a MainSpanKey equality or use something hashable for use in a map, but for now obey these properties.
-type MainSpanKey = L.SpanKey<SpanMeta>
+type MainSpanKey = L.SpanKey<L.SpanMeta>
 type SplitSpanKeys = { ctxs: MainSpanKey[], nodes: MainSpanKey[][] }
 export type SnipWrapper<Tk> = (txt: React.ReactNode, sp_ks: Tk) => React.ReactNode;
 export type SpanKeySnipWrapper<Tk> = SnipWrapper<L.SpanKey<Tk>[]>
 
-const wrap_snip: SpanKeySnipWrapper<TSpanTyd<unknown>> = (txt, sp_ks) => {
+const wrap_snip: SpanKeySnipWrapper<L.TSpanTyd<unknown>> = (txt, sp_ks) => {
 	const k_counts = sp_ks.reduce((acc, [sp, k]) => {
 		if(k !== undefined) {
 			const [spty, _el] = k;
@@ -124,7 +122,7 @@ function next_spks(fw_edge: L.FwEdge, gr: L.NodeGraph): SplitSpanKeys {
 		return { ctxs: [], nodes: [] };
 	}
 }
-function mk_snip_codeblock(parsetree: ParseTree<SpanMeta>) {
+function mk_snip_codeblock(parsetree: ParseTree<L.SpanMeta>) {
 	return <section className="src-container"> {/* ref={e => this.setState({ root_container_el: e || undefined })} */ /* if I wanted this to scroll I should make a generalized scrollable code block with */}
 		<pre>
 			<code id="src_root" className="language-haskell hljs">
@@ -285,7 +283,7 @@ export default class extends React.Component<TProps, TState> {
 			const current_file = this.state.filelist[this.state.current_file];
 			// if(this.state.src === undefined && current_file !== undefined || this.state.src !== undefined && current_file !== this.state.src.path) {
 				const stash_req_idx = this.state.src_req_idx;
-				fetch(`/f?n=${encodeURIComponent(current_file.replace('lib/', '').replace('.hs', '.hie'))}`)
+				fetch(`/f?n=${encodeURIComponent(current_file.replace(/(lib|src)\//, '').replace('.hs', '.hie'))}`)
 					.then(r => r.text())
 					.then(t => this.setState(st => {
 						if(this.state.src_req_idx === stash_req_idx) {
@@ -395,10 +393,10 @@ export default class extends React.Component<TProps, TState> {
 											);
 											const soft_active = any(sp_k => jsoneq(this.state.snip_active, sp_k), spks);
 											return <li className={
-												active || soft_active ? 'active' : ''
+												`${active || soft_active ? 'active' : ''} next-node-item`
 											}>
-												{ i + 1 < 10 ? <kbd>{i + 1}</kbd> : undefined}
-												<SnipItem<L.SpanKey<SpanMeta>, MainSpanKey[]>
+												{ i + 1 < 10 ? <kbd className="next-item-keycode">{i + 1}</kbd> : undefined}
+												<SnipItem<L.SpanKey<L.SpanMeta>, MainSpanKey[]>
 													onClick={this.nextNodeClickHandler}
 													onDoubleClick={this.nextNodeDoubleClickHandler}
 													onBlur={this.nextNodeBlurHandler}
@@ -472,7 +470,7 @@ export default class extends React.Component<TProps, TState> {
 													}
 												})();
 												return <li>
-													<SnipItem<L.SpanKey<TSpanTyd<undefined>>>
+													<SnipItem<L.SpanKey<L.TSpanTyd<undefined>>>
 														tabbable={false}
 														key={`${JSON.stringify(spks)}` /* LOWPRI TODO come up with a better unique */}
 														force_show_preview={num_show_toggles}
@@ -710,6 +708,7 @@ export default class extends React.Component<TProps, TState> {
 			ref={this.main_root_ref}>
 			<nav id="main_nav">
 				<span id="logo_container">
+					<a id="github" href="https://github.com/acrylic-origami/stacker/"></a>
 					<div id="logo"></div>
 				</span>
 				<ul id="file_tabs" className="flatlist">
@@ -720,7 +719,7 @@ export default class extends React.Component<TProps, TState> {
 						</li>)}
 				</ul>
 			</nav>
-			<MainContent<SpanMeta>
+			<MainContent<L.SpanMeta>
 				ctx_renderer={this.render_ctx_bar}
 				src={this.state.src}
 				span_ks={this.state.at_spks_merged || []}

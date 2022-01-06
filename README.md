@@ -2,6 +2,8 @@
 
 Stacker is a mixed static/runtime analyzer that runs the dependents of a Cabal package of interest to find out how it's used in the wild. Stacker creates a dependency graph of values starting from a function call from a package dependent.
 
+**Try it live at <http://stacker.lam.io>!**
+
 Stacker's main goal is to address barriers to adoption of packages and frameworks that arises from skepticism about examples and The Right Way. Instead, let's prefer collecting hard statistics on how people _actually_ use the API. Reciprocally, it also helps package owners identify kludges in their interface.
 
 Stacker uses GHC's [cost-centre profiler](https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/profiling.html#cost-centres-and-cost-centre-stacks) to collect a stack trace from executing tests on a package dependent. It then analyzes [HIE (Haskell Interface Extended) files](https://gitlab.haskell.org/ghc/ghc/-/wikis/hie-files) that contain the ASTs of the sources in the compilation set. In the AST, Stacker follows dependencies of the target package's functions up the call stack and along value bindings to backtrack the arguments to the function of interest as well.

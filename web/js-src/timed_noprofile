@@ -1,0 +1,34 @@
+$ /usr/bin/time -l stack build
+x-0.1.0.0: unregistering (local file changes: ChangeLog.md README.md app/Main.hs package.yaml src/Lib.hs x.cabal)
+Building all executables for `x' once. After a successful build of all of them, only specified executables will be rebuilt.
+x> configure (lib + exe)
+Configuring x-0.1.0.0...
+x> build (lib + exe)
+Preprocessing library for x-0.1.0.0..
+Building library for x-0.1.0.0..
+[1 of 2] Compiling Lib
+[2 of 2] Compiling Paths_x
+Preprocessing executable 'x-exe' for x-0.1.0.0..
+Building executable 'x-exe' for x-0.1.0.0..
+[1 of 2] Compiling Main
+[2 of 2] Compiling Paths_x
+Linking .stack-work/dist/x86_64-osx/Cabal-3.0.1.0/build/x-exe/x-exe ...
+x> copy/register
+Installing library in /Users/derek-lam/dev/sandbox/2020-08-12-0/x/.stack-work/install/x86_64-osx/943b09a4cac7dc4a756e89e962f678df5886a0bd1edc6f66b94aafa6e2ffcd71/8.8.3/lib/x86_64-osx-ghc-8.8.3/x-0.1.0.0-JT4CYcvVff9CBuEbQljwvp
+Installing executable x-exe in /Users/derek-lam/dev/sandbox/2020-08-12-0/x/.stack-work/install/x86_64-osx/943b09a4cac7dc4a756e89e962f678df5886a0bd1edc6f66b94aafa6e2ffcd71/8.8.3/bin
+Registering library for x-0.1.0.0..
+        9.27 real         7.24 user         1.49 sys
+ 272416768  maximum resident set size
+         0  average shared memory size
+         0  average unshared data size
+         0  average unshared stack size
+    442120  page reclaims
+       384  page faults
+         0  swaps
+         0  block input operations
+         0  block output operations
+         0  messages sent
+         0  messages received
+         0  signals received
+       304  voluntary context switches
+     10256  involuntary context switches

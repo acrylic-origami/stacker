@@ -1,0 +1,30 @@
+$ /usr/bin/time -l stack build --profile
+x> configure (lib + exe)
+Configuring x-0.1.0.0...
+x> build (lib + exe)
+Preprocessing library for x-0.1.0.0..
+Building library for x-0.1.0.0..
+[2 of 2] Compiling Lib
+Preprocessing executable 'x-exe' for x-0.1.0.0..
+Building executable 'x-exe' for x-0.1.0.0..
+[1 of 2] Compiling Main [Lib changed]
+Linking .stack-work/dist/x86_64-osx/Cabal-3.0.1.0/build/x-exe/x-exe ...
+x> copy/register
+Installing library in /Users/derek-lam/dev/sandbox/2020-08-12-0/x/.stack-work/install/x86_64-osx/ec3be3aef90ba1743345df3c3bced67b8103488342bf34222507ee1243997243/8.8.3/lib/x86_64-osx-ghc-8.8.3/x-0.1.0.0-JT4CYcvVff9CBuEbQljwvp
+Installing executable x-exe in /Users/derek-lam/dev/sandbox/2020-08-12-0/x/.stack-work/install/x86_64-osx/ec3be3aef90ba1743345df3c3bced67b8103488342bf34222507ee1243997243/8.8.3/bin
+Registering library for x-0.1.0.0..
+       85.87 real        72.51 user         5.40 sys
+2455453696  maximum resident set size
+         0  average shared memory size
+         0  average unshared data size
+         0  average unshared stack size
+   1096910  page reclaims
+     52560  page faults
+         0  swaps
+         0  block input operations
+         0  block output operations
+         0  messages sent
+         0  messages received
+         0  signals received
+      1749  voluntary context switches
+    145763  involuntary context switches

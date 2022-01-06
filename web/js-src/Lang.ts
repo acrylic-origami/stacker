@@ -11,6 +11,8 @@ export type Span = [string, Loc, Loc]
 export type ISpan = [number, number]
 export type ISpanKey<Tk> = [ISpan, Tk]
 export type SpanKey<Tk> = [Span, Tk]
+export type TSpanTyd<T> = [ SPANTY, T ]
+export type SpanMeta = TSpanTyd<FwEdge>
 
 export type Node = number;
 
